@@ -458,5 +458,4 @@
     showFatal('Fatal error during mountApp()', e);
   }
 }
-``
 export function mountApp(root) {
