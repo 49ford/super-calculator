@@ -11,6 +11,9 @@ export function mountApp(root) {
     'system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
 
   const el = (tag, attrs = {}, children = []) => {
+    function formatCurrency(num) {
+  return '$' + Math.round(num).toLocaleString('en-AU');
+}
     const n = document.createElement(tag);
     Object.entries(attrs).forEach(([k, v]) => {
       if (k === 'style') Object.assign(n.style, v);
