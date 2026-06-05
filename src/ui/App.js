@@ -1,7 +1,4 @@
-import { estimateAgePension } from '../engine/pension.js';
-
-export function mountApp(root) {
-  // ---------- Fail-loud ----------
+import { estimateAgePension } from '../engine/pension.js';import ----------
   const showFatal = (msg, err) => {
     try {
       root.innerHTML = '';
@@ -38,7 +35,7 @@ export function mountApp(root) {
     root.style.color = '#e8eaf0';
     root.style.fontFamily = "system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
 
-    // ---------- DOM helper (HTML) ----------
+    // ---------- HTML DOM helper ----------
     const el = (tag, attrs = {}, children = []) => {
       const n = document.createElement(tag);
       Object.entries(attrs).forEach(([k, v]) => {
@@ -59,12 +56,11 @@ export function mountApp(root) {
       return n;
     };
 
-    // ---------- DOM helper (SVG namespace) — FIXES GRAPH RENDER ----------
+    // ---------- SVG helper (namespace) ----------
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const svgEl = (tag, attrs = {}, children = []) => {
       const n = document.createElementNS(SVG_NS, tag);
       Object.entries(attrs).forEach(([k, v]) => {
-        // svg styles are best as attributes
         if (k === 'style') {
           if (v && typeof v === 'object') {
             const s = Object.entries(v).map(([a,b]) => `${a}:${b}`).join(';');
@@ -87,7 +83,6 @@ export function mountApp(root) {
     const fmtPct = (dec) => (dec * 100).toFixed(2) + '%';
 
     // ---------- Locked actuals + FY2025 close seeds (v4.2) ----------
-    // Ages 48–53 locked; FY2025 close seeds FY2026 forecasts (Rob 829,122.86 / Tina 658,880). 【1-d82045】【1-ed908e】
     const ACTUALS = [
       { age:48, robOpen:462151.00, tinaOpen:335957.00 },
       { age:49, robOpen:570166.00, tinaOpen:416543.00 },
@@ -98,8 +93,8 @@ export function mountApp(root) {
     ];
     const FINAL_ACTUAL_CLOSE = { rob: 829122.86, tina: 658880.00 };
 
-    // ---------- Hard-coded concessional schedule (your instruction) ----------
-    // Age 54 (FY2025–26): 30k each. Age 55+ : 32.5k each. 【1-ed908e】【1-d82045】
+    // ---------- Hard-coded concessional schedule ----------
+    // Age 54: 30k each; Age 55+: 32.5k each
     const concessionalForAge = (age) => {
       if (age === 54) return 30000;
       if (age > 54) return 32500;
@@ -117,7 +112,7 @@ export function mountApp(root) {
     };
     const stageName = (s) => (s === 0 ? 'Golden' : s === 1 ? 'Silver' : 'Legacy');
 
-    // ---------- State ----------
+    // ---------- State (defaults per your request) ----------
     const state = {
       tab: 'super',
       showActuals: true,
@@ -131,27 +126,32 @@ export function mountApp(root) {
 
       contribTax: 0.15,
 
-      // returns (nuanced)
-      robWorkReturn: 0.08,
-      tinaWorkReturn: 0.08,
+      // defaults: 10.3% work returns
+      robWorkReturn: 0.103,
+      tinaWorkReturn: 0.103,
       retireReturn: 0.08,
 
-      // phased spend defaults & slider constraints
+      // phased spend defaults
       spendMin: 50000,
       spendMax: 500000,
-      spendGolden: 150000,
-      spendSilver: 150000,
-      spendLegacy: 150000,
+      spendGolden: 290000,
+      spendSilver: 210000,
+      spendLegacy: 285000,
       spendPhase: 'Golden',
 
-      splitPct: 50,
+      // default split 55%
+      splitPct: 55,
+
+      // other assets + income slider
+      otherAssets: 0,
+      otherAssetsReturn: 0.05, // default 5% p.a. income yield
+      otherIncomeStartAge: 60, // apply only from 60+
 
       // pension
       usePension: true,
       homeowner: true,
-      otherAssets: 0,
 
-      // pension params (aligned to v4.2 defaults)
+      // pension params
       fullPension: 44855,
       assetThreshold: 470000,
       assetTaperPerDollar: 0.078,
@@ -165,11 +165,11 @@ export function mountApp(root) {
     // ---------- Layout ----------
     const header = el('div', { style: { padding:'16px 20px', background:'#161923', borderBottom:'1px solid #252a3a' }}, [
       el('div', { style:{ fontSize:'10px', letterSpacing:'2px', color:'#5a6080', textTransform:'uppercase' }},
-        'V6 NEXT · Locked Actuals · Dual-Person · Phased Spend'
+        'V6 NEXT · Locked Actuals · Dual-Person · Phased Spend · Other Asset Income'
       ),
       el('div', { style:{ fontSize:'20px', fontWeight:'900', marginTop:'4px' }}, 'Super Calculator'),
       el('div', { style:{ fontSize:'12px', color:'#7a8099', marginTop:'2px' }},
-        'Controls left · Graph/results right · Concessional fixed (30k at age 54, 32.5k after)'
+        'Controls left · Graph/results right · Concessional locked · Spend staged · Other assets income from age 60'
       )
     ]);
 
@@ -273,6 +273,7 @@ export function mountApp(root) {
       const startAge = state.showActuals ? 48 : 54;
       const rows = [];
 
+      // Actuals (close = next open)
       if (state.showActuals) {
         for (let i=0; i<ACTUALS.length; i++) {
           const a = ACTUALS[i];
@@ -282,11 +283,14 @@ export function mountApp(root) {
           rows.push({
             age: a.age, phase: 'ACTUAL', stage: '',
             robClose, tinaClose, combinedClose: robClose + tinaClose,
-            robSpend: 0, tinaSpend: 0, pension: 0
+            robSpend: 0, tinaSpend: 0,
+            pension: 0, otherIncome: 0,
+            robCC: 0, tinaCC: 0
           });
         }
       }
 
+      // Forecast seed
       let robBal = state.robSeed;
       let tinaBal = state.tinaSeed;
 
@@ -296,7 +300,7 @@ export function mountApp(root) {
         const robWorking = age < state.robRetireAge;
         const tinaWorking = age < state.tinaRetireAge;
 
-        // HARD CODED concessional schedule (no slider)
+        // Hard-coded concessional schedule
         const robCC = robWorking ? concessionalForAge(age) : 0;
         const tinaCC = tinaWorking ? concessionalForAge(age) : 0;
 
@@ -318,7 +322,12 @@ export function mountApp(root) {
         const yearIndex = (anyRetired && age >= earliestRetire) ? (age - earliestRetire) : -1;
         const stage = (yearIndex >= 0) ? stageName(stageIndex(yearIndex)) : '';
 
-        // Pension (from 67, if enabled)
+        // Other-assets income stream (ONLY from age 60 onward and only during retirement years)
+        const otherIncome = (anyRetired && age >= state.otherIncomeStartAge)
+          ? (state.otherAssets * state.otherAssetsReturn)
+          : 0;
+
+        // Pension (from 67)
         let pension = 0;
         if (state.usePension && anyRetired && age >= 67) {
           pension = estimateAgePension({
@@ -336,13 +345,15 @@ export function mountApp(root) {
         }
 
         const grossSpend = (yearIndex >= 0) ? stagedSpend(yearIndex) : 0;
-        const netSuperSpend = Math.max(0, grossSpend - pension);
+
+        // Net super draw need reduced by pension AND other income
+        const netSuperSpend = Math.max(0, grossSpend - pension - otherIncome);
 
         // Retirement return BEFORE spend
         if (!robWorking) robBal = robBal + robBal * state.retireReturn;
         if (!tinaWorking) tinaBal = tinaBal + tinaBal * state.retireReturn;
 
-        // Spend allocation
+        // Allocate super drawdown
         let robSpend = 0, tinaSpend = 0;
 
         if (netSuperSpend > 0) {
@@ -376,15 +387,17 @@ export function mountApp(root) {
         rows.push({
           age, phase: 'FORECAST', stage,
           robClose: robBal, tinaClose: tinaBal, combinedClose: robBal + tinaBal,
-          robSpend, tinaSpend, pension,
-          robCC, tinaCC
+          robSpend, tinaSpend,
+          pension, otherIncome,
+          robCC, tinaCC,
+          grossSpend
         });
       }
 
       return rows.filter(r => r.age >= startAge);
     }
 
-    // ---------- SVG chart (FIXED rendering) ----------
+    // ---------- SVG chart ----------
     function balanceChart(rows) {
       const width = 980, height = 320;
       const padL = 62, padR = 18, padT = 18, padB = 36;
@@ -411,6 +424,7 @@ export function mountApp(root) {
 
       svg.appendChild(svgEl('rect', { x: '0', y: '0', width: String(width), height: String(height), fill: '#0f1117' }));
 
+      // grid + y labels
       const ticks = 4;
       for (let i = 0; i <= ticks; i++) {
         const v = (yMax * i) / ticks;
@@ -460,11 +474,11 @@ export function mountApp(root) {
       const rows = buildTimeline();
       const earliestRetire = Math.min(state.robRetireAge, state.tinaRetireAge);
       const atEarliest = rows.find(r => r.age === earliestRetire) || rows[0];
+      const at60 = rows.find(r => r.age === 60) || atEarliest;
       const at90 = rows.find(r => r.age === 90) || rows[rows.length - 1];
       const exhausted = rows.find(r => r.combinedClose <= 0);
 
       if (state.tab === 'super') {
-        // Spend-phase single slider state
         const currentSpend =
           state.spendPhase === 'Golden' ? state.spendGolden :
           state.spendPhase === 'Silver' ? state.spendSilver :
@@ -477,7 +491,6 @@ export function mountApp(root) {
           render();
         };
 
-        // Controls LEFT (note: concessional sliders removed)
         const controls = el('div', {}, [
           toggle(state.showActuals ? 'Actuals: ON (to FY2025)' : 'Actuals: OFF (from FY2026)', state.showActuals, () => { state.showActuals = !state.showActuals; render(); }),
 
@@ -488,6 +501,7 @@ export function mountApp(root) {
           slider('Rob retires at age', 55, 67, 1, state.robRetireAge, String(state.robRetireAge), v => { state.robRetireAge = v; render(); }),
           slider('Tina retires at age', 55, 67, 1, state.tinaRetireAge, String(state.tinaRetireAge), v => { state.tinaRetireAge = v; render(); }),
 
+          // phased spend controls
           el('div', { style: { marginTop: '12px' } }, [
             el('div', { style: { fontSize: '12px', color: '#c0c5d8', fontWeight: '900', marginBottom: '8px' } }, 'Gross income (phased)'),
             el('div', { style: { display: 'flex', gap: '8px', marginBottom: '8px' } }, [
@@ -502,35 +516,40 @@ export function mountApp(root) {
           ]),
 
           slider('Split when both retired (Rob %)', 0, 100, 5, state.splitPct, state.splitPct + '%', v => { state.splitPct = v; render(); }),
-          slider('Other assets (non-super)', 0, 1000000, 10000, state.otherAssets, fmt(state.otherAssets), v => { state.otherAssets = v; render(); }),
+
+          // other assets + income yield slider (NEW)
+          slider('Other assets (principal)', 0, 2000000, 25000, state.otherAssets, fmt(state.otherAssets), v => { state.otherAssets = v; render(); }),
+          slider('Other assets income yield %', 0, 12, 0.05, state.otherAssetsReturn * 100, (state.otherAssetsReturn * 100).toFixed(2) + '%', v => { state.otherAssetsReturn = v / 100; render(); }),
+
           toggle(state.usePension ? 'Age Pension: ON' : 'Age Pension: OFF', state.usePension, () => { state.usePension = !state.usePension; render(); }),
+
           slider('End age', 70, 100, 1, state.endAge, String(state.endAge), v => { state.endAge = v; render(); }),
 
           el('div', { style: { marginTop:'8px', fontSize:'11px', color:'#5a6080', lineHeight:'1.5' }}, [
-            `Concessional locked: Age 54 = $30,000 each; Age 55+ = $32,500 each (no slider).`
+            `Concessional locked: Age 54 = $30,000 each; Age 55+ = $32,500 each. Other-asset income applies from age 60 only.`
           ])
         ]);
 
         left.appendChild(panel('Controls', controls));
 
-        // Results RIGHT
+        // Cards
         const cards = el('div', {
           style: { display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'16px' }
         }, [
           card('Earliest retirement combined', fmt(atEarliest.combinedClose), `Age ${earliestRetire}`, '#5dd87a'),
-          card('Rob @ earliest retirement', fmt(atEarliest.robClose), 'Vision Super', '#6c8ef0'),
-          card('Tina @ earliest retirement', fmt(atEarliest.tinaClose), 'Aware Super', '#a06cf0'),
-          card('Pension (that year)', fmt(atEarliest.pension), state.usePension ? 'Applied from age 67' : 'Disabled', atEarliest.pension > 0 ? '#f0b96c' : '#f06c6c'),
+          card('Other assets income @ 60', fmt(at60.otherIncome || 0), `= ${fmt(state.otherAssets)} × ${(state.otherAssetsReturn*100).toFixed(2)}%`, '#6c8ef0'),
+          card('Pension @ 67+', fmt(atEarliest.pension), state.usePension ? 'Applied from age 67' : 'Disabled', atEarliest.pension > 0 ? '#f0b96c' : '#f06c6c'),
           card(exhausted ? 'Exhausted at age' : 'Still running at', exhausted ? String(exhausted.age) : String(state.endAge), exhausted ? 'Household runs out' : 'Horizon intact', exhausted ? '#f06c6c' : '#5dd87a'),
           card('Balance at 90', fmt(at90.combinedClose), `Rob ${fmt(at90.robClose)} · Tina ${fmt(at90.tinaClose)}`, at90.combinedClose > 0 ? '#a06cf0' : '#f06c6c')
         ]);
 
         right.appendChild(panel('Key Results', cards));
-        right.appendChild(panel('Balance Graph (fixed)', balanceChart(rows)));
+        right.appendChild(panel('Balance Graph (updates live)', balanceChart(rows)));
 
+        // Timeline table
         const slice = rows.slice(0, 45);
         right.appendChild(panel('Timeline (first 45 rows)', table(
-          ['Age','Phase','Stage','Rob Close','Tina Close','Combined','Rob Spend','Tina Spend','Pension','Rob CC','Tina CC'],
+          ['Age','Phase','Stage','Rob Close','Tina Close','Combined','Gross Spend','Other Income','Pension','Rob Spend','Tina Spend','Rob CC','Tina CC'],
           slice.map(r => ([
             String(r.age),
             r.phase,
@@ -538,9 +557,11 @@ export function mountApp(root) {
             fmt(r.robClose),
             fmt(r.tinaClose),
             fmt(r.combinedClose),
-            r.robSpend > 0 ? fmt(r.robSpend) : '—',
-            r.tinaSpend > 0 ? fmt(r.tinaSpend) : '—',
-            r.pension > 0 ? fmt(r.pension) : '—',
+            r.grossSpend ? fmt(r.grossSpend) : '—',
+            r.otherIncome ? fmt(r.otherIncome) : '—',
+            r.pension ? fmt(r.pension) : '—',
+            r.robSpend ? fmt(r.robSpend) : '—',
+            r.tinaSpend ? fmt(r.tinaSpend) : '—',
             r.phase === 'FORECAST' ? fmt(r.robCC) : '—',
             r.phase === 'FORECAST' ? fmt(r.tinaCC) : '—',
           ]))
@@ -550,7 +571,7 @@ export function mountApp(root) {
           `Seeds from FY2025 close: Rob ${fmt(FINAL_ACTUAL_CLOSE.rob)}, Tina ${fmt(FINAL_ACTUAL_CLOSE.tina)}.`,
         ])));
         right.appendChild(panel('Adviser Summary', el('div', { style:{ color:'#7a8099', fontSize:'12px', lineHeight:'1.6' }}, [
-          'Concessional is locked per your instruction: age 54 = $30k each, age 55+ = $32.5k each. Spend is staged into Golden/Silver/Legacy thirds and applied from earliest retirement age.',
+          'Concessional is locked: age 54 = $30k each; age 55+ = $32.5k each. Spend is staged into Golden/Silver/Legacy thirds. Other asset income begins at age 60 and reduces required super drawdown.',
         ])));
       }
     }
@@ -561,3 +582,5 @@ export function mountApp(root) {
     showFatal('Fatal error during mountApp()', e);
   }
 }
+
+export function mountApp(root) {
