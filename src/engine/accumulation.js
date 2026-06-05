@@ -40,6 +40,37 @@ export function buildAccumulationSchedule(params) {
     returnRate,
   } = params;
 
+  const rows = [];
+  let bal = startBalance;
+
+  for (let age = startAge; age <= endAge; age++) {
+    const openingBalance = bal;
+
+    const concessionalContribution = concessionalCap;
+    const contributionsTaxAmount = concessionalContribution * contributionsTax;
+    const netContribution = concessionalContribution - contributionsTaxAmount;
+
+    const balanceBeforeReturn = openingBalance + netContribution;
+    const investmentReturn = balanceBeforeReturn * returnRate;
+
+    const closingBalance = balanceBeforeReturn + investmentReturn;
+
+    rows.push({
+      age,
+      openingBalance,
+      concessionalContribution,
+      contributionsTax: contributionsTaxAmount,
+      netContribution,
+      investmentReturn,
+      closingBalance,
+    });
+
+    bal = closingBalance;
+  }
+
+  return rows;
+}
+
   // First year only (single-row implementation)
   const openingBalance = startBalance;
 
