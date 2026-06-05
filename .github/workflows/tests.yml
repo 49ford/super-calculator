@@ -7,11 +7,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Verify Node version
+        run: node --version
+
       - name: Run accumulation engine test
-        run: |
-          node --version
-          node tests/accumulation.test.mjs
-``
+        run: node tests/accumulation.test.mjs
