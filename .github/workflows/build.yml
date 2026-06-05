@@ -26,4 +26,3 @@ jobs:
         with:
           name: super-calculator-v6
           path: dist/super-calculator-v6.html
-``
