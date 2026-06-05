@@ -44,9 +44,10 @@ if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 const refHtml = fs.existsSync(refHtmlPath) ? fs.readFileSync(refHtmlPath, 'utf8') : '';
 const css = extractCssFromReference(refHtml);
 
-// basic HTML shell + fail-loud boot
+// JS bundle
 const js = bundle();
 
+// Offline HTML
 const html = `<!doctype html>
 <html lang="en">
 <head>
