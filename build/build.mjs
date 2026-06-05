@@ -13,7 +13,6 @@ const files = [
   'src/engine/pension.js',
   'src/engine/tax.js',
   'src/ui/App.js',
-  'src/index.js',
 ];
 
 function read(p) {
