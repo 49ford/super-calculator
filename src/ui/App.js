@@ -214,6 +214,20 @@ body.appendChild(summaryRow);
   root.appendChild(nav);
   root.appendChild(body);
 
+  try {
   render();
+} catch (e) {
+  body.innerHTML = '';
+  body.appendChild(
+    el('pre', {
+      style: {
+        color: '#ff6b6b',
+        background: '#161923',
+        padding: '16px',
+        whiteSpace: 'pre-wrap'
+      }
+    }, 'UI ERROR:\n\n' + e.stack)
+  );
+}
 }
 
