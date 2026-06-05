@@ -67,20 +67,66 @@ const formatCurrency = (num) =>
 body.appendChild(
   el('div', {
     style: {
-      background: '#161923',
-      border: '1px solid #252a3a',
-      borderRadius: '12px',
-      padding: '16px',
-      maxWidth: '320px'
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap: '16px'
     }
   }, [
-    el('div', { style: { fontSize: '12px', color: '#7a8099' } }, 'Super at Retirement'),
-    el('div', { style: { fontSize: '24px', fontWeight: '700' } },
-      formatCurrency(accum[accum.length - 1].closingBalance)
-    ),
-    el('div', { style: { fontSize: '11px', color: '#5a6080' } },
-      'Balance at age ' + accum[accum.length - 1].age
-    )
+
+    // Super at Retirement
+    el('div', {
+      style: {
+        background: '#161923',
+        border: '1px solid #252a3a',
+        borderRadius: '12px',
+        padding: '16px'
+      }
+    }, [
+      el('div', { style: { fontSize: '12px', color: '#7a8099' } }, 'Super at Retirement'),
+      el('div', { style: { fontSize: '24px', fontWeight: '700' } },
+        formatCurrency(accum[accum.length - 1].closingBalance)
+      ),
+      el('div', { style: { fontSize: '11px', color: '#5a6080' } },
+        'Balance at age ' + accum[accum.length - 1].age
+      )
+    ]),
+
+    // Gross Income (Year 1)
+    el('div', {
+      style: {
+        background: '#161923',
+        border: '1px solid #252a3a',
+        borderRadius: '12px',
+        padding: '16px'
+      }
+    }, [
+      el('div', { style: { fontSize: '12px', color: '#7a8099' } }, 'Gross Income (Year 1)'),
+      el('div', { style: { fontSize: '22px', fontWeight: '700' } },
+        formatCurrency(draw.rows[0].spend) + ' / yr'
+      ),
+      el('div', { style: { fontSize: '11px', color: '#5a6080' } },
+        'First retirement year'
+      )
+    ]),
+
+    // Age Pension
+    el('div', {
+      style: {
+        background: '#161923',
+        border: '1px solid #252a3a',
+        borderRadius: '12px',
+        padding: '16px'
+      }
+    }, [
+      el('div', { style: { fontSize: '12px', color: '#7a8099' } }, 'Age Pension'),
+      el('div', { style: { fontSize: '22px', fontWeight: '700' } },
+        formatCurrency(pension)
+      ),
+      el('div', { style: { fontSize: '11px', color: '#5a6080' } },
+        pension > 0 ? 'Payable at retirement' : 'Not eligible at retirement'
+      )
+    ])
+
   ])
 );
 }
