@@ -28,7 +28,13 @@ export function mountApp(root) {
 const formatCurrency = (num) =>
   '$' + Math.round(num).toLocaleString('en-AU');
 
-  const body = el('div', { style: { padding: '24px' } });
+const th = (label) =>
+  el('th', { style: { textAlign: 'right', padding: '6px', color: '#7a8099' } }, label);
+
+const td = (value) =>
+  el('td', { style: { textAlign: 'right', padding: '6px' } }, value);
+
+const body = el('div', { style: { padding: '24px' } });
   root.appendChild(
     el('h2', {}, 'Super Calculator V6 (Offline)'));
   root.appendChild(body);
@@ -64,15 +70,129 @@ const formatCurrency = (num) =>
     incomeTaperRate: 0.5,
   });
 
-body.appendChild(
-  el('div', {
-    style: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-      gap: '16px'
-    }
-  }, [
+body.appendChild(el('h3', { style: { marginTop: '24px' } }, 'Accumulation'));
 
+const accumTable = el('table', {
+  style: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    background: '#0f1117',
+    border: '1px solid #252a3a',
+    borderRadius: '12px',
+    overflow: 'hidden'
+  }
+});
+
+accumTable.appendChild(
+  el('thead', {}, [
+    el('tr', {}, [
+      th('Age'),
+      th('Opening'),
+      th('Net Contrib'),
+      th('Return'),
+      th('Closing')
+    ])
+  ])
+);
+
+const accumBody = el('tbody');
+accum.forEach(r => {
+  accumBody.appendChild(
+    el('tr', {}, [
+      td(r.age),
+      td(formatCurrency(r.openingBalance)),
+      td(formatCurrency(r.netContribution)),
+      td(formatCurrency(r.investmentReturn)),
+      td(formatCurrency(r.closingBalance))
+    ])
+  );
+});
+  
+accumTable.appendChild(accumBody);
+body.appendChild(accumTable);
+  
+// ---------- Accumulation Table ----------
+body.appendChild(el('h3', { style: { marginTop: '24px' } }, 'Accumulation'));
+
+const accumTable = el('table', {
+  style: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    background: '#0f1117',
+    border: '1px solid #252a3a',
+    borderRadius: '12px'
+  }
+});
+
+accumTable.appendChild(
+  el('thead', {}, [
+    el('tr', {}, [
+      el('th', {}, 'Age'),
+      el('th', {}, 'Opening'),
+      el('th', {}, 'Net Contrib'),
+      el('th', {}, 'Return'),
+      el('th', {}, 'Closing')
+    ])
+  ])
+);
+
+const accumBody = el('tbody');
+accum.forEach(r => {
+  accumBody.appendChild(
+    el('tr', {}, [
+      el('td', {}, r.age),
+      el('td', {}, formatCurrency(r.openingBalance)),
+      el('td', {}, formatCurrency(r.netContribution)),
+      el('td', {}, formatCurrency(r.investmentReturn)),
+      el('td', {}, formatCurrency(r.closingBalance))
+    ])
+  );
+});
+
+accumTable.appendChild(accumBody);
+body.appendChild(accumTable);
+  
+// ---------- Drawdown Table ----------
+body.appendChild(el('h3', { style: { marginTop: '24px' } }, 'Drawdown'));
+
+const drawTable = el('table', {
+  style: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    background: '#0f1117',
+    border: '1px solid #252a3a',
+    borderRadius: '12px'
+  }
+});
+
+drawTable.appendChild(
+  el('thead', {}, [
+    el('tr', {}, [
+      el('th', {}, 'Age'),
+      el('th', {}, 'Opening'),
+      el('th', {}, 'Spend'),
+      el('th', {}, 'Return'),
+      el('th', {}, 'Closing')
+    ])
+  ])
+);
+
+const drawBody = el('tbody');
+draw.rows.forEach(r => {
+  drawBody.appendChild(
+    el('tr', {}, [
+      el('td', {}, r.age),
+      el('td', {}, formatCurrency(r.openingBalance)),
+      el('td', {}, formatCurrency(r.spend)),
+      el('td', {}, formatCurrency(r.investmentReturn)),
+      el('td', {}, formatCurrency(r.closingBalance))
+    ])
+  );
+});
+
+drawTable.appendChild(drawBody);
+body.appendChild(drawTable);
+  
     // Super at Retirement
     el('div', {
       style: {
