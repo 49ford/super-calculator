@@ -31,5 +31,32 @@
  *   - closingBalance
  */
 export function buildAccumulationSchedule(params) {
-  // implementation comes next
-}
+  const {
+    startAge,
+    endAge,
+    startBalance,
+    concessionalCap,
+    contributionsTax,
+    returnRate,
+  } = params;
+
+  // First year only (single-row implementation)
+  const openingBalance = startBalance;
+
+  const concessionalContribution = concessionalCap;
+  const contributionsTaxAmount = concessionalContribution * contributionsTax;
+  const netContribution = concessionalContribution - contributionsTaxAmount;
+
+  const balanceBeforeReturn = openingBalance + netContribution;
+  const investmentReturn = balanceBeforeReturn * returnRate;
+
+  const closingBalance = balanceBeforeReturn + investmentReturn;
+
+  return [
+    {
+      age: startAge,
+      openingBalance,
+      concessionalContribution,
+      contributionsTax: contributionsTaxAmount,
+      netContribution,
+      investmentReturn
