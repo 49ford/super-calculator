@@ -65,17 +65,23 @@ export function mountApp(root) {
     incomeTaperRate: 0.5,
   });
 
-  body.appendChild(
-    el('pre', { style: { whiteSpace: 'pre-wrap' } },
-      JSON.stringify(
-        {
-          accumulationEnd: accum[accum.length - 1],
-          firstDrawdownYear: draw.rows[0],
-          pensionAtRetirement: pension,
-        },
-        null,
-        2
-      )
+body.appendChild(
+  el('div', {
+    style: {
+      background: '#161923',
+      border: '1px solid #252a3a',
+      borderRadius: '12px',
+      padding: '16px',
+      maxWidth: '320px'
+    }
+  }, [
+    el('div', { style: { fontSize: '12px', color: '#7a8099' } }, 'Super at Retirement'),
+    el('div', { style: { fontSize: '24px', fontWeight: '700' } },
+      formatCurrency(accum[accum.length - 1].closingBalance)
+    ),
+    el('div', { style: { fontSize: '11px', color: '#5a6080' } },
+      'Balance at age ' + accum[accum.length - 1].age
     )
-  );
+  ])
+);
 }
