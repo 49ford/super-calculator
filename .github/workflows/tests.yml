@@ -1,4 +1,4 @@
-name: V6 Tests
+name: V6 Engine Tests
 
 on:
   push:
@@ -9,7 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run tests (node)
+
+      - name: Run accumulation engine test
         run: |
           node --version
           node tests/accumulation.test.mjs
+``
