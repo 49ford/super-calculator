@@ -76,6 +76,31 @@ export function mountApp(root) {
 
   const body = el('div', { style: { padding: '16px' } });
 
+  function summaryCard(title, value, subtitle) {
+  return el('div', {
+    style: {
+      background: '#161923',
+      border: '1px solid #252a3a',
+      borderRadius: '12px',
+      padding: '16px'
+    }
+  }, [
+    el('div', {
+      style: { fontSize: '12px', color: '#7a8099', marginBottom: '6px' }
+    }, title),
+    el('div', {
+      style: { fontSize: '22px', fontWeight: '700', marginBottom: '4px' }
+    }, value),
+    el('div', {
+      style: { fontSize: '11px', color: '#5a6080' }
+    }, subtitle)
+  ]);
+}
+
+function formatCurrency(num) {
+  return '$' + Math.round(num).toLocaleString('en-AU');
+}
+  
   function render() {
     body.innerHTML = '';
 
@@ -124,11 +149,41 @@ export function mountApp(root) {
     }
 
     if (state.tab === 'adviser') {
-      body.appendChild(
-        el('p', {}, 'Adviser summary placeholder (V6)')
-      );
-    }
+// ---- Summary cards ----
+const summaryRow = el('div', {
+  style: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: '16px',
+    marginBottom: '20px'
   }
+});
+
+summaryRow.appendChild(
+  summaryCard(
+    'Super at Retirement',
+    formatCurrency(accum.at(-1).closingBalance),
+    'Balance at age ' + accum.at(-1).age
+  )
+);
+
+summaryRow.appendChild(
+  summaryCard(
+    'Gross Income (Year 1)',
+    formatCurrency(draw.rows[0].spend) + ' / yr',
+    'First retirement year'
+  )
+);
+
+summaryRow.appendChild(
+  summaryCard(
+    'Age Pension',
+    formatCurrency(pension),
+    pension > 0 ? 'Payable at retirement' : 'Not eligible at retirement'
+  )
+);
+
+body.appendChild(summaryRow);
 
   root.appendChild(header);
   root.appendChild(nav);
@@ -136,4 +191,4 @@ export function mountApp(root) {
 
   render();
 }
-``
+
