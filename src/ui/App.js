@@ -1,18 +1,7 @@
 import { estimateAgePension } from '../engine/pension.js';
 
-/**
- * V6 NEXT — Presentable dual-person offline model (no React/Babel)
- * - Locked actuals ages 48–53 (FY2020–FY2025) from v4.2
- * - Forecast seeded from FY2025 closes (Rob 829,122.86 / Tina 658,880.00)
- * - Left controls / right graph + cards + timeline
- * - Phased spend: Golden / Silver / Legacy (toggle which stage the slider edits)
- * - Close balances include spend in that year
- * - Fully functional SVG balance graph (updates on any change)
- * - Fail-loud global error capture (no silent black screens)
- */
-
 export function mountApp(root) {
-  // ---------- Fail-loud guardrails ----------
+  // ---------- Fail-loud ----------
   const showFatal = (msg, err) => {
     try {
       root.innerHTML = '';
@@ -41,20 +30,26 @@ export function mountApp(root) {
   };
 
   try {
-    // ---------- Base page ----------
+    // ---------- Base ----------
     root.innerHTML = '';
     root.style.minHeight = '100vh';
     root.style.background = '#0f1117';
     root.style.color = '#e8eaf0';
     root.style.fontFamily = "system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
 
-    // ---------- DOM helper ----------
+    // ---------- DOM helper (FIXED) ----------
+    // FIX: support style as object OR string (prevents "Indexed property setter is not supported")
     const el = (tag, attrs = {}, children = []) => {
       const n = document.createElement(tag);
       Object.entries(attrs).forEach(([k, v]) => {
-        if (k === 'style') Object.assign(n.style, v);
-        else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v);
-        else n.setAttribute(k, String(v));
+        if (k === 'style') {
+          if (v && typeof v === 'object') Object.assign(n.style, v);
+          else if (typeof v === 'string') n.setAttribute('style', v);
+        } else if (k.startsWith('on') && typeof v === 'function') {
+          n.addEventListener(k.slice(2).toLowerCase(), v);
+        } else {
+          n.setAttribute(k, String(v));
+        }
       });
       [].concat(children).forEach(c => {
         if (c == null) return;
@@ -67,23 +62,21 @@ export function mountApp(root) {
     // ---------- Formatting ----------
     const fmt = (n) => '$' + Math.round(n).toLocaleString('en-AU');
     const fmtPct = (dec) => (dec * 100).toFixed(2) + '%';
-    const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-    // ---------- Locked actuals (v4.2) ----------
-    // Ages 48–53 are locked. Closing = next row’s opening; age 53 closes to FINAL_ACTUAL_CLOSE.
-    // Source: v4.2 ACTUALS + FINAL_ACTUAL_CLOSE. 【1-d9526d】
+    // ---------- Locked actuals + forecast seed (v4.2) ----------
+    // Locked ages 48–53 and FY2025 closes (Rob 829,122.86 / Tina 658,880.00). 【1-0c5083】
     const ACTUALS = [
-      { age:48, robOpen:462151.00, tinaOpen:335957.00, robContrib:22479.00, tinaContrib:23249.00, robReturnPct:19.24, tinaReturnPct:18.10 },
-      { age:49, robOpen:570166.00, tinaOpen:416543.00, robContrib:22876.00, tinaContrib:26669.00, robReturnPct:18.07, tinaReturnPct:16.50 },
-      { age:50, robOpen:567311.00, tinaOpen:419005.00, robContrib:24993.00, tinaContrib:26669.00, robReturnPct:-4.42, tinaReturnPct:-5.63 },
-      { age:51, robOpen:652528.00, tinaOpen:484791.00, robContrib:27208.00, tinaContrib:26669.00, robReturnPct:10.39, tinaReturnPct:9.05  },
-      { age:52, robOpen:730025.00, tinaOpen:559116.00, robContrib:26551.00, tinaContrib:26669.00, robReturnPct:7.55,  tinaReturnPct:9.57  },
-      { age:53, robOpen:829122.86, tinaOpen:658880.00, robContrib:29608.32, tinaContrib:30000.00, robReturnPct:9.76,  tinaReturnPct:12.77 },
+      { age:48, robOpen:462151.00, tinaOpen:335957.00 },
+      { age:49, robOpen:570166.00, tinaOpen:416543.00 },
+      { age:50, robOpen:567311.00, tinaOpen:419005.00 },
+      { age:51, robOpen:652528.00, tinaOpen:484791.00 },
+      { age:52, robOpen:730025.00, tinaOpen:559116.00 },
+      { age:53, robOpen:829122.86, tinaOpen:658880.00 },
     ];
-    const FINAL_ACTUAL_CLOSE = { rob: 829122.86, tina: 658880.00 }; // FY2025 close seeds FY2026 【1-d9526d】【1-3edd45】
+    const FINAL_ACTUAL_CLOSE = { rob: 829122.86, tina: 658880.00 }; // seeds FY2026+ 【1-0c5083】【1-d7933a】
 
-    // ---------- Phased spending helper (aligned to V4.2 concept) ----------
-    // V4.2 uses a 41-year horizon split into thirds (gold/silver/legacy). 【1-d9526d】
+    // ---------- Phased spending helpers (V4.2 concept: horizon split into thirds) ----------
+    // V4.2 uses a 41-year drawdown horizon split into thirds for staged spending. 【1-0c5083】
     const DRAWDOWN_HORIZON_YEARS = 41;
     const thirdSize = () => Math.ceil(DRAWDOWN_HORIZON_YEARS / 3);
     const stageIndex = (i) => {
@@ -92,56 +85,49 @@ export function mountApp(root) {
       if (i < t * 2) return 1;
       return 2;
     };
-    const stageName = (i) => (i === 0 ? 'Golden' : i === 1 ? 'Silver' : 'Legacy');
+    const stageName = (s) => (s === 0 ? 'Golden' : s === 1 ? 'Silver' : 'Legacy');
 
     // ---------- State ----------
     const state = {
       tab: 'super',
       showActuals: true,
-
       endAge: 90,
 
       robRetireAge: 60,
       tinaRetireAge: 60,
 
-      // Seeds (Vision vs Aware, different levels)
       robSeed: FINAL_ACTUAL_CLOSE.rob,
       tinaSeed: FINAL_ACTUAL_CLOSE.tina,
 
-      // Concessional contributions (default $30k each, per briefing) 【1-3edd45】
+      // Concessional defaults: $30k each (briefing) 【1-d7933a】
       robConcessional: 30000,
       tinaConcessional: 30000,
       contribTax: 0.15,
 
-      // Returns (nuanced)
+      // returns
       robWorkReturn: 0.08,
       tinaWorkReturn: 0.08,
       retireReturn: 0.08,
 
-      // Spend slider spec
+      // phased spend defaults (starts around 150k as requested)
       spendMin: 50000,
       spendMax: 500000,
-
-      // Phased spend values (default 150k per your request)
       spendGolden: 150000,
       spendSilver: 150000,
       spendLegacy: 150000,
+      spendPhase: 'Golden',
 
-      // Which phase the single slider edits
-      spendPhase: 'Golden', // 'Golden' | 'Silver' | 'Legacy'
-
-      // Split when both retired (Rob share)
       splitPct: 50,
 
-      // Pension
+      // pension
       usePension: true,
       homeowner: true,
       otherAssets: 0,
 
-      // Pension params (defaults aligned to v4.2)
-      fullPension: 44855,            // FY2025 couple full pension p.a. 【1-d9526d】
-      assetThreshold: 470000,        // couple homeowner threshold 【1-d9526d】
-      assetTaperPerDollar: 0.078,    // $78 per $1000 【1-d9526d】
+      // pension params (aligned to v4.2 defaults)
+      fullPension: 44855,            // couple full pension pa 【1-0c5083】
+      assetThreshold: 470000,        // couple homeowner threshold 【1-0c5083】
+      assetTaperPerDollar: 0.078,    // 78/year per $1000 -> 0.078 per $ 【1-0c5083】
       deemingThreshold: 100000,
       deemingRateLow: 0.0025,
       deemingRateHigh: 0.0225,
@@ -149,7 +135,7 @@ export function mountApp(root) {
       incomeTaperRate: 0.5
     };
 
-    // ---------- Layout (left controls, right results) ----------
+    // ---------- Layout ----------
     const header = el('div', { style: { padding:'16px 20px', background:'#161923', borderBottom:'1px solid #252a3a' }}, [
       el('div', { style:{ fontSize:'10px', letterSpacing:'2px', color:'#5a6080', textTransform:'uppercase' }}, 'V6 NEXT · Locked Actuals · Dual-Person · Phased Spend'),
       el('div', { style:{ fontSize:'20px', fontWeight:'900', marginTop:'4px' }}, 'Super Calculator'),
@@ -248,19 +234,17 @@ export function mountApp(root) {
       return tbl;
     };
 
-    // ---------- Spend for a retirement yearIndex ----------
     function stagedSpend(yearIndex) {
       const s = stageIndex(yearIndex);
       return s === 0 ? state.spendGolden : s === 1 ? state.spendSilver : state.spendLegacy;
     }
 
-    // ---------- Core simulation ----------
-    // IMPORTANT: Retired close balances INCLUDE the spend (close = after return & after draw).
+    // ---------- Timeline model ----------
+    // Close balances INCLUDE spend: close = after return & after drawdown.
     function buildTimeline() {
       const startAge = state.showActuals ? 48 : 54;
       const rows = [];
 
-      // Actuals
       if (state.showActuals) {
         for (let i=0; i<ACTUALS.length; i++) {
           const a = ACTUALS[i];
@@ -268,22 +252,13 @@ export function mountApp(root) {
           const robClose = next ? next.robOpen : FINAL_ACTUAL_CLOSE.rob;
           const tinaClose = next ? next.tinaOpen : FINAL_ACTUAL_CLOSE.tina;
           rows.push({
-            age: a.age,
-            phase: 'ACTUAL',
-            robOpen: a.robOpen,
-            tinaOpen: a.tinaOpen,
-            robSpend: 0,
-            tinaSpend: 0,
-            pension: 0,
-            robClose,
-            tinaClose,
-            combinedClose: robClose + tinaClose,
-            spendStage: ''
+            age: a.age, phase: 'ACTUAL', stage: '',
+            robClose, tinaClose, combinedClose: robClose + tinaClose,
+            robSpend: 0, tinaSpend: 0, pension: 0
           });
         }
       }
 
-      // Forecast seed at age 54
       let robBal = state.robSeed;
       let tinaBal = state.tinaSeed;
 
@@ -293,10 +268,7 @@ export function mountApp(root) {
         const robWorking = age < state.robRetireAge;
         const tinaWorking = age < state.tinaRetireAge;
 
-        const robOpen = robBal;
-        const tinaOpen = tinaBal;
-
-        // Accumulation while working: (open + net contrib) * (1 + return)
+        // Work accumulation
         if (robWorking) {
           const net = state.robConcessional * (1 - state.contribTax);
           const before = robBal + net;
@@ -311,12 +283,12 @@ export function mountApp(root) {
         const anyRetired = (!robWorking) || (!tinaWorking);
         const bothRetired = (!robWorking) && (!tinaWorking);
 
-        // Retirement year index for phased spend
-        const yearIndex = age >= earliestRetire ? (age - earliestRetire) : -1;
+        const yearIndex = (anyRetired && age >= earliestRetire) ? (age - earliestRetire) : -1;
+        const stage = (yearIndex >= 0) ? stageName(stageIndex(yearIndex)) : '';
 
-        // Pension from 67 (simple gate)
+        // Pension (from 67, if enabled)
         let pension = 0;
-        if (state.usePension && age >= 67 && anyRetired) {
+        if (state.usePension && anyRetired && age >= 67) {
           pension = estimateAgePension({
             financialAssets: robBal + tinaBal + state.otherAssets,
             homeowner: state.homeowner,
@@ -331,11 +303,10 @@ export function mountApp(root) {
           });
         }
 
-        // Determine gross spend for this retirement year (staged)
-        const grossSpend = (anyRetired && yearIndex >= 0) ? stagedSpend(yearIndex) : 0;
+        const grossSpend = (yearIndex >= 0) ? stagedSpend(yearIndex) : 0;
         const netSuperSpend = Math.max(0, grossSpend - pension);
 
-        // Apply retirement return to retired balances BEFORE draw (like V4.2 drawdown assumption)
+        // Retirement return BEFORE spend
         if (!robWorking) robBal = robBal + robBal * state.retireReturn;
         if (!tinaWorking) tinaBal = tinaBal + tinaBal * state.retireReturn;
 
@@ -360,36 +331,27 @@ export function mountApp(root) {
               tinaSpend += tinaExtra; rem -= tinaExtra;
             }
           } else if (!robWorking && tinaWorking) {
-            // Gap years: retired spouse funds 100%
             robSpend = Math.min(robBal, netSuperSpend);
           } else if (robWorking && !tinaWorking) {
             tinaSpend = Math.min(tinaBal, netSuperSpend);
           }
         }
 
-        // Close balances AFTER spend (this is the correction you requested)
+        // Close AFTER spend
         robBal = Math.max(0, robBal - robSpend);
         tinaBal = Math.max(0, tinaBal - tinaSpend);
 
         rows.push({
-          age,
-          phase: 'FORECAST',
-          robOpen,
-          tinaOpen,
-          robSpend,
-          tinaSpend,
-          pension,
-          robClose: robBal,
-          tinaClose: tinaBal,
-          combinedClose: robBal + tinaBal,
-          spendStage: (anyRetired && yearIndex >= 0) ? stageName(stageIndex(yearIndex)) : ''
+          age, phase: 'FORECAST', stage,
+          robClose: robBal, tinaClose: tinaBal, combinedClose: robBal + tinaBal,
+          robSpend, tinaSpend, pension
         });
       }
 
       return rows.filter(r => r.age >= startAge);
     }
 
-    // ---------- SVG chart (visible + responsive) ----------
+    // ---------- SVG balance chart ----------
     function balanceChart(rows) {
       const width = 980, height = 320;
       const padL = 62, padR = 18, padT = 18, padB = 36;
@@ -397,14 +359,12 @@ export function mountApp(root) {
       const ages = rows.map(r => r.age);
       const xMin = ages[0], xMax = ages[ages.length - 1];
       const yMax = Math.max(...rows.map(r => r.combinedClose)) * 1.05;
-      const yMin = 0;
 
-      // Guard against division by zero
       const xDen = (xMax - xMin) || 1;
-      const yDen = (yMax - yMin) || 1;
+      const yDen = (yMax - 0) || 1;
 
       const x = (age) => padL + ((age - xMin) / xDen) * (width - padL - padR);
-      const y = (val) => padT + (1 - ((val - yMin) / yDen)) * (height - padT - padB);
+      const y = (val) => padT + (1 - (val / yDen)) * (height - padT - padB);
 
       const mkPath = (key) => rows.map((r, i) => {
         const cmd = i === 0 ? 'M' : 'L';
@@ -429,7 +389,7 @@ export function mountApp(root) {
           y: String(yy + 4),
           fill: '#5a6080',
           'text-anchor': 'end',
-          style: 'font-family:monospace;font-size:11px'
+          style: { fontFamily: 'monospace', fontSize: '11px' }
         }, fmt(v)));
       }
 
@@ -451,7 +411,7 @@ export function mountApp(root) {
       items.forEach((it, i) => {
         const lx = padL + i * 150, ly = 16;
         legend.appendChild(el('rect', { x: String(lx), y: String(ly - 9), width: '10', height: '10', fill: it.col }));
-        legend.appendChild(el('text', { x: String(lx + 14), y: String(ly), fill: '#c0c5d8', style: 'font-size:12px;font-weight:800' }, it.label));
+        legend.appendChild(el('text', { x: String(lx + 14), y: String(ly), fill: '#c0c5d8', style: { fontSize: '12px', fontWeight: '800' } }, it.label));
       });
       svg.appendChild(legend);
 
@@ -474,9 +434,8 @@ export function mountApp(root) {
       const at90 = rows.find(r => r.age === 90) || rows[rows.length - 1];
       const exhausted = rows.find(r => r.combinedClose <= 0);
 
-      // LEFT: controls
+      // LEFT controls
       if (state.tab === 'super') {
-        // Spend phase slider reads/writes the selected phase
         const currentSpend =
           state.spendPhase === 'Golden' ? state.spendGolden :
           state.spendPhase === 'Silver' ? state.spendSilver :
@@ -502,9 +461,8 @@ export function mountApp(root) {
           slider('Rob concessional p.a.', 0, 35000, 500, state.robConcessional, fmt(state.robConcessional), v => { state.robConcessional = v; render(); }),
           slider('Tina concessional p.a.', 0, 35000, 500, state.tinaConcessional, fmt(state.tinaConcessional), v => { state.tinaConcessional = v; render(); }),
 
-          // Phased spend selector + one slider
           el('div', { style: { marginTop: '12px' } }, [
-            el('div', { style: { fontSize: '12px', color: '#c0c5d8', fontWeight: '800', marginBottom: '8px' } }, 'Gross income (phased)'),
+            el('div', { style: { fontSize: '12px', color: '#c0c5d8', fontWeight: '900', marginBottom: '8px' } }, 'Gross income (phased)'),
             el('div', { style: { display: 'flex', gap: '8px', marginBottom: '8px' } }, [
               phaseButton('Golden'),
               phaseButton('Silver'),
@@ -528,19 +486,13 @@ export function mountApp(root) {
         left.appendChild(panel('Controls', controls));
       } else {
         left.appendChild(panel('Locked assumptions', el('div', { style:{ color:'#7a8099', fontSize:'12px', lineHeight:'1.6' }}, [
-          'Locked through FY2024–25 using v4.2 actuals (ages 48–53). Forecast begins age 54 seeded from FY2025 closes:',
-          el('ul', {}, [
-            el('li', {}, `Rob (Vision) FY2025 close seed: ${fmt(FINAL_ACTUAL_CLOSE.rob)}`),
-            el('li', {}, `Tina (Aware) FY2025 close seed: ${fmt(FINAL_ACTUAL_CLOSE.tina)}`),
-          ])
+          'Locked through FY2024–25 using v4.2 actuals (ages 48–53). Forecast begins age 54 seeded from FY2025 closes.',
         ])));
       }
 
-      // RIGHT: results
+      // RIGHT results
       if (state.tab === 'super') {
-        const cards = el('div', {
-          style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }
-        }, [
+        const cards = el('div', { style: { display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'16px' }}, [
           card('Earliest retirement combined', fmt(atEarliest.combinedClose), `Age ${earliestRetire}`, '#5dd87a'),
           card('Rob @ earliest retirement', fmt(atEarliest.robClose), 'Vision Super', '#6c8ef0'),
           card('Tina @ earliest retirement', fmt(atEarliest.tinaClose), 'Aware Super', '#a06cf0'),
@@ -552,14 +504,13 @@ export function mountApp(root) {
         right.appendChild(panel('Key Results', cards));
         right.appendChild(panel('Balance Graph (updates live)', balanceChart(rows)));
 
-        // Timeline table (first 45 rows)
         const slice = rows.slice(0, 45);
         right.appendChild(panel('Timeline (first 45 rows)', table(
           ['Age','Phase','Stage','Rob Close','Tina Close','Combined','Rob Spend','Tina Spend','Pension'],
           slice.map(r => ([
             String(r.age),
             r.phase,
-            r.spendStage || '—',
+            r.stage || '—',
             fmt(r.robClose),
             fmt(r.tinaClose),
             fmt(r.combinedClose),
@@ -568,21 +519,14 @@ export function mountApp(root) {
             r.pension > 0 ? fmt(r.pension) : '—'
           ]))
         )));
-      }
-
-      if (state.tab === 'adviser') {
+      } else {
         right.appendChild(panel('Adviser Summary', el('div', { style:{ color:'#7a8099', fontSize:'12px', lineHeight:'1.6' }}, [
-          'Phased spend is applied from earliest retirement age:',
-          el('ul', {}, [
-            el('li', {}, 'Golden years = first third of retirement horizon'),
-            el('li', {}, 'Silver years = second third'),
-            el('li', {}, 'Legacy years = final third'),
-          ]),
-          'Close balances shown in the graph/table are AFTER returns and AFTER spend each year (retirement years).',
+          'Phased spend is applied from the earliest retirement age and split into thirds (Golden/Silver/Legacy). Close balances shown are after returns and after spend in each retirement year.',
         ])));
       }
     }
 
+    // initial render
     render();
 
   } catch (e) {
