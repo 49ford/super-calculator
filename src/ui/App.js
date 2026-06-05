@@ -100,6 +100,31 @@ export function mountApp(root) {
 function formatCurrency(num) {
   return '$' + Math.round(num).toLocaleString('en-AU');
 }
+
+  function summaryCard(title, value, subtitle) {
+  return el('div', {
+    style: {
+      background: '#161923',
+      border: '1px solid #252a3a',
+      borderRadius: '12px',
+      padding: '16px'
+    }
+  }, [
+    el('div', {
+      style: { fontSize: '12px', color: '#7a8099', marginBottom: '6px' }
+    }, title),
+    el('div', {
+      style: { fontSize: '22px', fontWeight: '700', marginBottom: '4px' }
+    }, value),
+    el('div', {
+      style: { fontSize: '11px', color: '#5a6080' }
+    }, subtitle)
+  ]);
+}
+
+function formatCurrency(num) {
+  return '$' + Math.round(num).toLocaleString('en-AU');
+}
   
   function render() {
     body.innerHTML = '';
