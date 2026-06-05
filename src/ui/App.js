@@ -11,27 +11,26 @@ export function mountApp(root) {
     'system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
 
   const el = (tag, attrs = {}, children = []) => {
-    function formatCurrency(num) {
-  return '$' + Math.round(num).toLocaleString('en-AU');
-}
-    const n = document.createElement(tag);
-    Object.entries(attrs).forEach(([k, v]) => {
-      if (k === 'style') Object.assign(n.style, v);
-      else if (k.startsWith('on'))
-        n.addEventListener(k.slice(2).toLowerCase(), v);
-      else n.setAttribute(k, v);
-    });
-    [].concat(children).forEach(c => {
-      if (typeof c === 'string') n.appendChild(document.createTextNode(c));
-      else if (c) n.appendChild(c);
-    });
-    return n;
-  };
+  const n = document.createElement(tag);
+  Object.entries(attrs).forEach(([k, v]) => {
+    if (k === 'style') Object.assign(n.style, v);
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2).toLowerCase(), v);
+    else n.setAttribute(k, v);
+  });
+  [].concat(children).forEach(c => {
+    if (typeof c === 'string') n.appendChild(document.createTextNode(c));
+    else if (c) n.appendChild(c);
+  });
+  return n;
+};
+
+// ✅ correct helper (now in scope for render + cards)
+const formatCurrency = (num) =>
+  '$' + Math.round(num).toLocaleString('en-AU');
 
   const body = el('div', { style: { padding: '24px' } });
   root.appendChild(
-    el('h2', {}, 'Super Calculator V6 (Offline)')
-  );
+    el('h2', {}, 'Super Calculator V6 (Offline)'));
   root.appendChild(body);
 
   // --- Known‑good engine execution ---
