@@ -149,9 +149,13 @@ export function mountApp(root) {
       // Split default 55%
       splitPct: 55,
 
-      // Other assets income stream from age 60 only
-      otherAssets: 0,
-      otherAssetsReturn: 0.05,
+   // Other assets (bucketed principal) + income settings
+      otherAssets: 0, // total (auto-summed from buckets each render)
+      otherAssetsBuckets: { realestate: 500000, shares: 0, other: 0 },
+      otherAssetsBucket: 'realestate', // which bucket the principal slider edits
+      otherAssetsReturn: 0.06,         // Yield (decimal)
+      otherAssetsCpi: 0.035,           // CPI index on income only (decimal) - default 3.5%
+      otherAssetsRateMode: 'yield',    // 'yield' | 'cpi'
       otherIncomeStartAge: 60,
 
       // Pension toggle + params
@@ -167,6 +171,11 @@ export function mountApp(root) {
       incomeFreeArea: 9000,
       incomeTaperRate: 0.5
     };
+
+    function otherAssetsTotal() {
+      var b = state.otherAssetsBuckets || {};
+      return (b.realestate || 0) + (b.shares || 0) + (b.other || 0);
+    }    
 
     // ----- Layout -----
     root.innerHTML = '';
@@ -258,6 +267,38 @@ export function mountApp(root) {
       }, label);
     }
 
+    function assetButton(label, key) {
+      return el('button', {
+        style: {
+          padding:'6px 10px',
+          borderRadius:'10px',
+          border:'1px solid #252a3a',
+          background: state.otherAssetsBucket === key ? 'rgba(108,142,240,.18)' : 'transparent',
+          color: state.otherAssetsBucket === key ? '#6c8ef0' : '#7a8099',
+          cursor:'pointer',
+          fontWeight:'900',
+          fontSize:'12px'
+        },
+        onClick: function() { state.otherAssetsBucket = key; render(); }
+      }, label);
+    }
+
+    function rateButton(label, mode) {
+      return el('button', {
+        style: {
+          padding:'6px 10px',
+          borderRadius:'10px',
+          border:'1px solid #252a3a',
+          background: state.otherAssetsRateMode === mode ? 'rgba(108,142,240,.18)' : 'transparent',
+          color: state.otherAssetsRateMode === mode ? '#6c8ef0' : '#7a8099',
+          cursor:'pointer',
+          fontWeight:'900',
+          fontSize:'12px'
+        },
+        onClick: function() { state.otherAssetsRateMode = mode; render(); }
+      }, label);
+    }
+
     function card(title, value, subtitle, color) {
       return el('div', { style:{ background:'#161923', border:'1px solid #252a3a', borderRadius:'12px', padding:'16px' }}, [
         el('div', { style:{ fontSize:'12px', color:'#7a8099', fontWeight:'800' }}, title),
@@ -339,9 +380,12 @@ export function mountApp(root) {
         var yearIndex = (anyRetired && age >= earliestRetire) ? (age - earliestRetire) : -1;
         var stage = (yearIndex >= 0) ? stageName(stageIndex(yearIndex)) : '';
 
-        var otherIncome = (anyRetired && age >= state.otherIncomeStartAge)
-          ? (state.otherAssets * state.otherAssetsReturn)
-          : 0;
+        var otherIncome = 0;
+        if (anyRetired && age >= state.otherIncomeStartAge) {
+          var yearsOI = age - state.otherIncomeStartAge; // 0 at age 60
+          var baseOI = state.otherAssets * state.otherAssetsReturn;
+          otherIncome = baseOI * Math.pow(1 + state.otherAssetsCpi, yearsOI);
+        }
 
         var pension = 0;
         if (state.usePension && anyRetired && age >= 67) {
@@ -478,6 +522,9 @@ export function mountApp(root) {
       left.innerHTML = '';
       right.innerHTML = '';
 
+      // keep legacy state.otherAssets in sync with buckets
+      state.otherAssets = otherAssetsTotal();
+
       var rows = buildTimeline();
       var earliestRetire = Math.min(state.robRetireAge, state.tinaRetireAge);
       var atEarliest = rows.filter(function(r){ return r.age === earliestRetire; })[0] || rows[0];
@@ -523,9 +570,48 @@ export function mountApp(root) {
 
           slider('Split when both retired (Rob %)', 0, 100, 5, state.splitPct, String(state.splitPct) + '%', function(v){ state.splitPct = v; render(); }),
 
-          slider('Other assets (principal)', 0, 2000000, 25000, state.otherAssets, fmt(state.otherAssets), function(v){ state.otherAssets = v; render(); }),
-          slider('Other assets income yield %', 0, 12, 0.05, state.otherAssetsReturn*100, (state.otherAssetsReturn*100).toFixed(2) + '%', function(v){ state.otherAssetsReturn = v/100; render(); }),
+         // Other assets principal (3 buckets, one slider edits selected bucket)
+          el('div', { style: { marginTop:'12px' }}, [
+            el('div', { style: { fontSize:'12px', color:'#c0c5d8', fontWeight:'900', marginBottom:'8px' }}, 'Other assets (principal)'),
+            el('div', { style: { display:'flex', gap:'8px', marginBottom:'8px' }}, [
+              assetButton('Realestate', 'realestate'),
+              assetButton('Shares', 'shares'),
+              assetButton('Other', 'other')
+            ]),
+            slider(
+              (state.otherAssetsBucket === 'realestate' ? 'Realestate' : (state.otherAssetsBucket === 'shares' ? 'Shares' : 'Other')) + ' principal',
+              0, 2000000, 25000,
+              (state.otherAssetsBuckets[state.otherAssetsBucket] || 0),
+              fmt(state.otherAssetsBuckets[state.otherAssetsBucket] || 0),
+              function(v){
+                state.otherAssetsBuckets[state.otherAssetsBucket] = v;
+                state.otherAssets = otherAssetsTotal();
+                render();
+              }
+            ),
+            el('div', { style: { fontSize:'11px', color:'#5a6080', marginTop:'6px' }}, 'Total other assets = ' + fmt(state.otherAssets))
+          ]),
 
+          // Other assets income controls (Yield/CPI toggles, one slider edits selected)
+          el('div', { style: { marginTop:'12px' }}, [
+            el('div', { style: { fontSize:'12px', color:'#c0c5d8', fontWeight:'900', marginBottom:'8px' }}, 'Other assets income (from age 60)'),
+            el('div', { style: { display:'flex', gap:'8px', marginBottom:'8px' }}, [
+              rateButton('Yield', 'yield'),
+              rateButton('CPI', 'cpi')
+            ]),
+            slider(
+              state.otherAssetsRateMode === 'yield' ? 'Yield %' : 'CPI % (income only)',
+              0, 12, 0.05,
+              (state.otherAssetsRateMode === 'yield' ? state.otherAssetsReturn : state.otherAssetsCpi) * 100,
+              ((state.otherAssetsRateMode === 'yield' ? state.otherAssetsReturn : state.otherAssetsCpi) * 100).toFixed(2) + '%',
+              function(v){
+                if (state.otherAssetsRateMode === 'yield') state.otherAssetsReturn = v/100;
+                else state.otherAssetsCpi = v/100;
+                render();
+              }
+            ),
+            el('div', { style: { fontSize:'11px', color:'#5a6080', marginTop:'6px' }}, 'Income = principal × yield, indexed by CPI each year from age 60 (income only).')
+          ]),
           toggle(state.usePension ? 'Age Pension: ON' : 'Age Pension: OFF', state.usePension, function(){ state.usePension = !state.usePension; render(); }),
 
           slider('End age', 70, 100, 1, state.endAge, String(state.endAge), function(v){ state.endAge = v; render(); }),
@@ -539,7 +625,7 @@ export function mountApp(root) {
 
         var cards = el('div', { style: { display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'16px' }}, [
           card('Earliest retirement combined', fmt(atEarliest.combinedClose), 'Age ' + earliestRetire, '#5dd87a'),
-          card('Other-assets income @ 60', fmt(at60.otherIncome || 0), fmt(state.otherAssets) + ' x ' + (state.otherAssetsReturn*100).toFixed(2) + '%', '#6c8ef0'),
+          card('Other-assets income @ 60', fmt(at60.otherIncome || 0), fmt(state.otherAssets) + ' x ' + (state.otherAssetsReturn*100).toFixed(2) + '% (CPI ' + (state.otherAssetsCpi*100).toFixed(2) + '%)', '#6c8ef0'),
           card('Pension (that year)', fmt(atEarliest.pension), state.usePension ? 'Applied from age 67' : 'Disabled', atEarliest.pension > 0 ? '#f0b96c' : '#f06c6c'),
           card(exhausted ? 'Exhausted at age' : 'Still running at', exhausted ? String(exhausted.age) : String(state.endAge), exhausted ? 'Household runs out' : 'Horizon intact', exhausted ? '#f06c6c' : '#5dd87a'),
           card('Balance at 90', fmt(at90.combinedClose), 'Rob ' + fmt(at90.robClose) + ' | Tina ' + fmt(at90.tinaClose), at90.combinedClose > 0 ? '#a06cf0' : '#f06c6c')
