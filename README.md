@@ -12,6 +12,7 @@ Offline‑first Australian retirement and superannuation modelling tool.
 ## Versions
 - V4.2 — reference implementation (HTML monolith)
 - V6 — structured, offline, maintainable rebuild (this repo)
+- PHASED V3 – STABLE (CPI indexed other assets complete)
 
 ## Not financial advice
 Personal modelling tool only.
