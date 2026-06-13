@@ -1,244 +1,5 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Superannuation Calculator V6 (Offline)</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-serif}
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:#1a1d27}
-::-webkit-scrollbar-thumb{background:#3a3f55;border-radius:3px}
-input[type=range]{-webkit-appearance:none;height:4px;border-radius:2px;background:#2a2f42;outline:none;cursor:pointer}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#6c8ef0;border:2px solid #0f1117}
-input[type=number],input[type=text]{background:#1e2233;border:1px solid #2a3050;border-radius:6px;color:#e8eaf0;padding:6px 10px;font-size:12px;font-family:'DM Mono',monospace;width:100%;outline:none}
-input[type=number]:focus,input[type=text]:focus{border-color:#6c8ef0}
-select{background:#1e2233;border:1px solid #2a3050;border-radius:6px;color:#e8eaf0;padding:6px 10px;font-size:12px;outline:none;cursor:pointer}
-button{font-family:'DM Sans','Segoe UI',sans-serif}
-.toggle-btn{cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-size:12px;color:#7a8099;padding:6px 12px;border-radius:6px;border:1px solid #252a3a;background:none;transition:all .2s;white-space:nowrap;user-select:none}
-.toggle-btn.on{color:#5dd87a;border-color:rgba(93,216,122,.4);background:rgba(93,216,122,.07)}
-.toggle-btn.on-amber{color:#f0b96c;border-color:rgba(240,185,108,.4);background:rgba(240,185,108,.07)}
-.toggle-btn.on-red{color:#f06c6c;border-color:rgba(240,108,108,.4);background:rgba(240,108,108,.07)}
-.toggle-btn.on-purple{color:#a06cf0;border-color:rgba(160,108,240,.4);background:rgba(160,108,240,.07)}
-tr.actual{background:rgba(93,216,122,.04)}
-tr.current{background:rgba(240,185,108,.1)!important;outline:1px solid rgba(240,185,108,.4)}
-tr.forecast{background:rgba(108,142,240,.03)}
-tr.retired-row{background:rgba(255,255,255,.01);opacity:.75}
-tr:hover{background:rgba(255,255,255,.05)!important}
-td,th{white-space:nowrap}
-.mono{font-family:'DM Mono',monospace}
-.pos{color:#5dd87a}.neg{color:#f06c6c}.warn{color:#f0b96c}.muted{color:#5a6080}
-.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:.4px}
-.pill-actual{background:rgba(93,216,122,.15);color:#5dd87a}
-.pill-forecast{background:rgba(108,142,240,.15);color:#6c8ef0}
-.pill-current{background:rgba(240,185,108,.2);color:#f0b96c}
-.pill-retired{background:rgba(255,255,255,.07);color:#5a6080}
-.pill-ttr{background:rgba(160,108,240,.15);color:#a06cf0}
-.pill-override{background:rgba(108,142,240,.18);color:#6c8ef0;font-style:italic}
-@media print{
-  body{background:white;color:#111}
-  .no-print{display:none!important}
-  .card,.card-sm{background:#f8f8f8!important;border:1px solid #ddd!important;box-shadow:none!important}
-  .print-break{page-break-before:always}
-}
-</style>
-</head>
-<body>
-<div id="root"></div>
-<script>
-(function(){
-  function showFatal(msg, err){
-    console.error(msg, err || '');
-    var root = document.getElementById('root');
-    if (!root) return;
-    root.innerHTML =
-      '<div style="min-height:100vh;padding:32px;background:#0f1117;color:#f06c6c;font-family:monospace">' +
-      '<h2 style="margin:0 0 12px 0">⚠️ Super Calculator V6 failed to load</h2>' +
-      '<div style="color:#f0b96c;margin-bottom:10px">' + msg + '</div>' +
-      '<div style="color:#7a8099">Open DevTools → Console for details.</div>' +
-      '</div>';
-  }
-
-  try {
-/**
- * V6 Accumulation Engine
- *
- * Models superannuation balance growth during working years.
- *
- * Assumptions:
- * - Forecast years always contribute the full concessional cap
- * - Contributions taxed at concessional rate
- * - Returns applied to opening balance + net contributions
- */
-
-function buildAccumulationSchedule(params) {
-  const {
-    startAge,
-    endAge,
-    startBalance,
-    concessionalCap,
-    contributionsTax,
-    returnRate,
-  } = params;
-
-  const rows = [];
-  let balance = startBalance;
-
-  for (let age = startAge; age <= endAge; age++) {
-    const openingBalance = balance;
-
-    const concessionalContribution = concessionalCap;
-    const contributionsTaxAmount = concessionalContribution * contributionsTax;
-    const netContribution = concessionalContribution - contributionsTaxAmount;
-
-    const balanceBeforeReturn = openingBalance + netContribution;
-    const investmentReturn = balanceBeforeReturn * returnRate;
-
-    const closingBalance = balanceBeforeReturn + investmentReturn;
-
-    rows.push({
-      age,
-      openingBalance,
-      concessionalContribution,
-      contributionsTax: contributionsTaxAmount,
-      netContribution,
-      investmentReturn,
-      closingBalance,
-    });
-
-    balance = closingBalance;
-  }
-
-  return rows;
-}
-``
-
-
-/**
- * V6 Drawdown Engine
- *
- * Models retirement income drawdown using GROSS spend.
- *
- * Assumptions:
- * - Spend is gross (tax handled separately)
- * - Returns applied after withdrawal
- * - Exhaustion occurs when balance ≤ 0
- */
-
-function buildDrawdownSchedule(params) {
-  const {
-    startAge,
-    endAge,
-    startBalance,
-    annualSpend,
-    returnRate,
-  } = params;
-
-  const rows = [];
-  let balance = startBalance;
-  let exhaustedAtAge = null;
-
-  for (let age = startAge; age <= endAge; age++) {
-    const openingBalance = balance;
-
-    const spend = Math.min(openingBalance, annualSpend);
-    const afterSpendBalance = openingBalance - spend;
-
-    const investmentReturn =
-      afterSpendBalance > 0 ? afterSpendBalance * returnRate : 0;
-
-    const closingBalance = afterSpendBalance + investmentReturn;
-
-    if (closingBalance <= 0 && exhaustedAtAge === null) {
-      exhaustedAtAge = age;
-    }
-
-    rows.push({
-      age,
-      openingBalance,
-      spend,
-      investmentReturn,
-      closingBalance,
-    });
-
-    balance = Math.max(0, closingBalance);
-  }
-
-  return {
-    exhaustedAtAge,
-    rows,
-  };
-}
-
-
-/**
- * V6 Pension Engine
- *
- * Simplified Age Pension model:
- * - Assets test
- * - Income test (deeming)
- * - Pension = min(assets test, income test)
- *
- * Figures are annual, couple combined.
- */
-
-function estimateAgePension(params) {
-  const {
-    financialAssets,
-    homeowner,
-    fullPension,
-    assetThreshold,
-    assetTaperPerDollar,
-    deemingThreshold,
-    deemingRateLow,
-    deemingRateHigh,
-    incomeFreeArea,
-    incomeTaperRate,
-  } = params;
-
-  // --- Assets test ---
-  const excessAssets = Math.max(0, financialAssets - assetThreshold);
-  const assetReduction = excessAssets * assetTaperPerDollar;
-  const pensionByAssets = Math.max(0, fullPension - assetReduction);
-
-  // --- Income test (deeming) ---
-  let deemedIncome;
-  if (financialAssets <= deemingThreshold) {
-    deemedIncome = financialAssets * deemingRateLow;
-  } else {
-    deemedIncome =
-      deemingThreshold * deemingRateLow +
-      (financialAssets - deemingThreshold) * deemingRateHigh;
-  }
-
-  const excessIncome = Math.max(0, deemedIncome - incomeFreeArea);
-  const incomeReduction = excessIncome * incomeTaperRate;
-  const pensionByIncome = Math.max(0, fullPension - incomeReduction);
-
-  return Math.min(pensionByAssets, pensionByIncome);
-}
-
-
-/**
- * V6 Tax Engine (simplified)
- * - Concessional contributions taxed at 15%
- * - Pension phase withdrawals assumed tax-free (age 60+)
- */
-function calculateTax({ phase, concessionalContribution = 0, concessionalTaxRate = 0.15 }) {
-  if (phase === 'accumulation') {
-    const tax = concessionalContribution * concessionalTaxRate;
-    return { tax, netAmount: concessionalContribution - tax };
-  }
-  if (phase === 'pension') {
-    return { tax: 0, netAmount: 0 };
-  }
-  throw new Error('Unknown tax phase');
-}
-
-
-/* PHASED_V3 — robust offline UI */
-function mountApp(root) {
+/* PHASED_V3 — LIVE */
+export function mountApp(root) {
   // ----- Visible build tag to confirm newest artifact -----
   var BUILD_TAG = 'PHASED_V3';
 
@@ -409,7 +170,11 @@ function mountApp(root) {
       deemingRateHigh: 0.0225,
       incomeFreeArea: 9000,
       incomeTaperRate: 0.5
-    };
+  
+      // Retirement shock
+      state.retirementShock = 'off'; // 'off' | 'downturn' | 'uplift'
+      const RETIREMENT_SHOCK_PCT = 0.20;
+       };
 
     function otherAssetsTotal() {
       var b = state.otherAssetsBuckets || {};
@@ -594,6 +359,7 @@ function mountApp(root) {
       var tinaBal = state.tinaSeed;
 
       var earliestRetire = Math.min(state.robRetireAge, state.tinaRetireAge);
+      var shockApplied = false;
 
       for (var age=54; age<=state.endAge; age++) {
         var robWorking = age < state.robRetireAge;
@@ -613,6 +379,22 @@ function mountApp(root) {
           tinaBal = beforeT + beforeT * state.tinaWorkReturn;
         }
 
+        // Apply retirement shock ONCE at retirement
+if (!shockApplied && age === earliestRetire && state.retirementShock !== 'off') {
+
+  if (state.retirementShock === 'downturn') {
+    robBal *= (1 - RETIREMENT_SHOCK_PCT);
+    tinaBal *= (1 - RETIREMENT_SHOCK_PCT);
+  }
+
+  if (state.retirementShock === 'uplift') {
+    robBal *= (1 + RETIREMENT_SHOCK_PCT);
+    tinaBal *= (1 + RETIREMENT_SHOCK_PCT);
+  }
+
+  shockApplied = true;
+}
+        
         var anyRetired = (!robWorking) || (!tinaWorking);
         var bothRetired = (!robWorking) && (!tinaWorking);
 
@@ -809,6 +591,56 @@ function mountApp(root) {
 
           slider('Split when both retired (Rob %)', 0, 100, 5, state.splitPct, String(state.splitPct) + '%', function(v){ state.splitPct = v; render(); }),
 
+          //Shock Control
+         el('div', { style: { marginTop:'12px' }}, [
+  el('div', { style: { fontSize:'12px', color:'#c0c5d8', fontWeight:'900', marginBottom:'8px' }}, 'Retirement Shock'),
+
+  el('div', { style: { display:'flex', gap:'8px' }}, [
+
+    el('button', {
+      style: {
+        padding:'6px 10px',
+        borderRadius:'10px',
+        border:'1px solid #252a3a',
+        background: state.retirementShock === 'off' ? 'rgba(108,142,240,.18)' : 'transparent',
+        color: state.retirementShock === 'off' ? '#6c8ef0' : '#7a8099',
+        cursor:'pointer',
+        fontWeight:'900',
+        fontSize:'12px'
+      },
+      onClick: function(){ state.retirementShock = 'off'; render(); }
+    }, 'OFF'),
+
+    el('button', {
+      style: {
+        padding:'6px 10px',
+        borderRadius:'10px',
+        border:'1px solid #252a3a',
+        background: state.retirementShock === 'downturn' ? 'rgba(240,108,108,.18)' : 'transparent',
+        color: state.retirementShock === 'downturn' ? '#f06c6c' : '#7a8099',
+        cursor:'pointer',
+        fontWeight:'900',
+        fontSize:'12px'
+      },
+      onClick: function(){ state.retirementShock = 'downturn'; render(); }
+    }, 'Downturn'),
+
+    el('button', {
+      style: {
+        padding:'6px 10px',
+        borderRadius:'10px',
+        border:'1px solid #252a3a',
+        background: state.retirementShock === 'uplift' ? 'rgba(93,216,122,.18)' : 'transparent',
+        color: state.retirementShock === 'uplift' ? '#5dd87a' : '#7a8099',
+        cursor:'pointer',
+        fontWeight:'900',
+        fontSize:'12px'
+      },
+      onClick: function(){ state.retirementShock = 'uplift'; render(); }
+    }, 'Uplift')
+
+  ])
+]), 
          // Other assets principal (3 buckets, one slider edits selected bucket)
           el('div', { style: { marginTop:'12px' }}, [
             el('div', { style: { fontSize:'12px', color:'#c0c5d8', fontWeight:'900', marginBottom:'8px' }}, 'Other assets (principal)'),
@@ -911,21 +743,3 @@ function mountApp(root) {
     showFatal('Fatal error during mountApp()', e);
   }
 }
-
-    if (typeof mountApp !== 'function') {
-      showFatal('mountApp() not found. Build script did not bundle UI correctly.');
-      return;
-    }
-    var el = document.getElementById('root');
-    if (!el) {
-      showFatal('#root element missing in HTML.');
-      return;
-    }
-    mountApp(el);
-  } catch (e) {
-    showFatal('Unhandled exception during boot: ' + (e && e.message ? e.message : String(e)), e);
-  }
-})();
-</script>
-</body>
-</html>
