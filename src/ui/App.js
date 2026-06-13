@@ -170,7 +170,11 @@ export function mountApp(root) {
       deemingRateHigh: 0.0225,
       incomeFreeArea: 9000,
       incomeTaperRate: 0.5
-    };
+  
+      // Retirement shock
+      state.retirementShock = 'off'; // 'off' | 'downturn' | 'uplift'
+      const RETIREMENT_SHOCK_PCT = 0.20;
+       };
 
     function otherAssetsTotal() {
       var b = state.otherAssetsBuckets || {};
@@ -355,6 +359,7 @@ export function mountApp(root) {
       var tinaBal = state.tinaSeed;
 
       var earliestRetire = Math.min(state.robRetireAge, state.tinaRetireAge);
+      var shockApplied = false;
 
       for (var age=54; age<=state.endAge; age++) {
         var robWorking = age < state.robRetireAge;
@@ -374,6 +379,22 @@ export function mountApp(root) {
           tinaBal = beforeT + beforeT * state.tinaWorkReturn;
         }
 
+        // Apply retirement shock ONCE at retirement
+if (!shockApplied && age === earliestRetire && state.retirementShock !== 'off') {
+
+  if (state.retirementShock === 'downturn') {
+    robBal *= (1 - RETIREMENT_SHOCK_PCT);
+    tinaBal *= (1 - RETIREMENT_SHOCK_PCT);
+  }
+
+  if (state.retirementShock === 'uplift') {
+    robBal *= (1 + RETIREMENT_SHOCK_PCT);
+    tinaBal *= (1 + RETIREMENT_SHOCK_PCT);
+  }
+
+  shockApplied = true;
+}
+        
         var anyRetired = (!robWorking) || (!tinaWorking);
         var bothRetired = (!robWorking) && (!tinaWorking);
 
@@ -570,6 +591,56 @@ export function mountApp(root) {
 
           slider('Split when both retired (Rob %)', 0, 100, 5, state.splitPct, String(state.splitPct) + '%', function(v){ state.splitPct = v; render(); }),
 
+          //Shock Control
+         el('div', { style: { marginTop:'12px' }}, [
+  el('div', { style: { fontSize:'12px', color:'#c0c5d8', fontWeight:'900', marginBottom:'8px' }}, 'Retirement Shock'),
+
+  el('div', { style: { display:'flex', gap:'8px' }}, [
+
+    el('button', {
+      style: {
+        padding:'6px 10px',
+        borderRadius:'10px',
+        border:'1px solid #252a3a',
+        background: state.retirementShock === 'off' ? 'rgba(108,142,240,.18)' : 'transparent',
+        color: state.retirementShock === 'off' ? '#6c8ef0' : '#7a8099',
+        cursor:'pointer',
+        fontWeight:'900',
+        fontSize:'12px'
+      },
+      onClick: function(){ state.retirementShock = 'off'; render(); }
+    }, 'OFF'),
+
+    el('button', {
+      style: {
+        padding:'6px 10px',
+        borderRadius:'10px',
+        border:'1px solid #252a3a',
+        background: state.retirementShock === 'downturn' ? 'rgba(240,108,108,.18)' : 'transparent',
+        color: state.retirementShock === 'downturn' ? '#f06c6c' : '#7a8099',
+        cursor:'pointer',
+        fontWeight:'900',
+        fontSize:'12px'
+      },
+      onClick: function(){ state.retirementShock = 'downturn'; render(); }
+    }, 'Downturn'),
+
+    el('button', {
+      style: {
+        padding:'6px 10px',
+        borderRadius:'10px',
+        border:'1px solid #252a3a',
+        background: state.retirementShock === 'uplift' ? 'rgba(93,216,122,.18)' : 'transparent',
+        color: state.retirementShock === 'uplift' ? '#5dd87a' : '#7a8099',
+        cursor:'pointer',
+        fontWeight:'900',
+        fontSize:'12px'
+      },
+      onClick: function(){ state.retirementShock = 'uplift'; render(); }
+    }, 'Uplift')
+
+  ])
+]), 
          // Other assets principal (3 buckets, one slider edits selected bucket)
           el('div', { style: { marginTop:'12px' }}, [
             el('div', { style: { fontSize:'12px', color:'#c0c5d8', fontWeight:'900', marginBottom:'8px' }}, 'Other assets (principal)'),
