@@ -1,4 +1,4 @@
-/* PHASED_V3 — robust offline UI */
+/* PHASED_V3 — LIVE */
 export function mountApp(root) {
   // ----- Visible build tag to confirm newest artifact -----
   var BUILD_TAG = 'PHASED_V3';
