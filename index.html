@@ -19,8 +19,33 @@
 
   <div id="root">Loading…</div>
 
-  <!-- App bundle -->
-  <script src="./reference/super-calculator-v6.html"></script>
+  <script>
+    // This loads your embedded app
+    fetch('./reference/super-calculator-v6.html')
+      .then(res => res.text())
+      .then(html => {
+        // extract the script content
+        const match = html.match(/<script[^>]*>([\\s\\S]*)<\\/script>/i);
+        if (!match) {
+          document.getElementById('root').innerText = 'ERROR: Could not find app script';
+          return;
+        }
+
+        // run the script
+        eval(match[1]);
+
+        // mount the app
+        const root = document.getElementById('root');
+        if (typeof mountApp === 'function') {
+          mountApp(root);
+        } else {
+          root.innerText = 'ERROR: mountApp not found';
+        }
+      })
+      .catch(e => {
+        document.getElementById('root').innerText = 'ERROR: ' + e;
+      });
+  </script>
 
 </body>
 </html>
