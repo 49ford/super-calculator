@@ -140,7 +140,7 @@ function defaultState(){
     shock:{enabled:false,type:'crash',magnitude:25,startOffset:1,durationYears:2},
     ncc:{enabled:false,robAnnual:0,tinaAnnual:0,startAge:54,endAge:60},
     partTime:{enabled:false,robAmount:0,robStartAge:60,robEndAge:63,tinaAmount:0,tinaStartAge:60,tinaEndAge:63},
-    minDrawdown:{enabled:true},
+    minDrawdown:{enabled:true,startAge:61},
     pensionBoost:{enabled:false,rate:0.012},
     monteCarlo:{enabled:false,runs:300,stdDev:10},
     goal:{enabled:false,targetBalance:500000},
@@ -313,7 +313,7 @@ function buildTimeline(st,returnOverrideFn){
       else{tSpend=Math.min(tBal,netSpend);}
     }
     // ── Minimum drawdown enforcement (ATO) ──────────────────────────────────
-    if(st.minDrawdown&&st.minDrawdown.enabled&&yIdx>=0){
+    if(st.minDrawdown&&st.minDrawdown.enabled&&age>=(st.minDrawdown.startAge||61)){
       var mdRate=minDrawdownRate(age);
       if(!rWork){var robMD=rBal*mdRate;if(robMD>rSpend)rSpend=Math.min(rBal,robMD);}
       if(!tWork){var tinaMD=tBal*mdRate;if(tinaMD>tSpend)tSpend=Math.min(tBal,tinaMD);}
@@ -1175,6 +1175,7 @@ function render(){
     d.appendChild(sld('Income free area',5000,20000,500,state.incomeFreeArea,fmt(state.incomeFreeArea),function(v){state.incomeFreeArea=v;render();}));
     d.appendChild(tog(state.minDrawdown.enabled?'Min drawdown rules: ON (ATO)':'Min drawdown rules: OFF',state.minDrawdown.enabled,function(){state.minDrawdown.enabled=!state.minDrawdown.enabled;render();}));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'3px'}},'4% at 60–64 · 5% at 65–74 · 6% at 75–79 · 7% at 80–84 · 9% at 85–89 · 14% at 90+'));
+    d.appendChild(sld('Min drawdown starts at age',60,70,1,state.minDrawdown.startAge,'Age '+state.minDrawdown.startAge,function(v){state.minDrawdown.startAge=v;render();}));
     return d;
   }));
 
