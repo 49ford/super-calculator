@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Superannuation Calculator V8</title>
+<title>Superannuation Calculator V9</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-serif}
@@ -134,19 +134,22 @@ function defaultState(){
       spendGolden:250000,spendSilver:180000,spendLegacy:250000
     },
     lumpSums:[],
-    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false}
+    shock:{enabled:false,type:'crash',magnitude:25,startOffset:1,durationYears:2},
+    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false}
   };
 }
 
 // ─── localStorage ──────────────────────────────────────────────────────────
-var LS_KEY='supercalc_v8_state';
+var LS_KEY='supercalc_v9_state';
 function loadState(){
   try{
     var raw=localStorage.getItem(LS_KEY);
     if(!raw){
       // Migrate from v7 if present
+      var v8=localStorage.getItem('supercalc_v8_state');
+      if(v8){var s=JSON.parse(v8);delete s.tab;return deepMerge(defaultState(),s);}
       var v7=localStorage.getItem('supercalc_v7_state');
-      if(v7){var s=JSON.parse(v7);delete s.tab;return deepMerge(defaultState(),s);}
+      if(v7){var s2=JSON.parse(v7);delete s2.tab;return deepMerge(defaultState(),s2);}
       return defaultState();
     }
     return deepMerge(defaultState(),JSON.parse(raw));
@@ -210,7 +213,7 @@ function fmtReal(n,yrs){
 function otherTotal(){var b=state.otherAssetsBuckets;return(b.realestate||0)+(b.shares||0)+(b.other||0);}
 
 // ─── Timeline builder ──────────────────────────────────────────────────────
-function buildTimeline(st){
+function buildTimeline(st,returnOverrideFn){
   var rows=[];
   if(st.showActuals){
     ACTUALS.forEach(function(a){
@@ -234,8 +237,8 @@ function buildTimeline(st){
     var yIdx=(anyRet&&age>=earliestRetire)?(age-earliestRetire):-1;
     var stage=yIdx>=0?stageName(stageIdx(yIdx)):'';
     // Retirement returns
-    if(!rWork)rBal=rBal+rBal*st.retireReturn;
-    if(!tWork)tBal=tBal+tBal*st.retireReturn;
+    if(!rWork){var rr=returnOverrideFn?returnOverrideFn(age):st.retireReturn;rBal=rBal+rBal*rr;}
+    if(!tWork){var rt=returnOverrideFn?returnOverrideFn(age):st.retireReturn;tBal=tBal+tBal*rt;}
     // ── Lump sums applied after returns ────────────────────────────────────
     var lsRob=0,lsTina=0,lsItems=[];
     (st.lumpSums||[]).forEach(function(ls){
@@ -291,6 +294,17 @@ function buildTimeline(st){
 function buildTimelineB(){
   var sb=Object.assign({},state,state.scenarioB,{caps:state.caps,lumpSums:state.lumpSums});
   return buildTimeline(sb);
+}
+function buildShockTimeline(){
+  if(!state.shock.enabled)return null;
+  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var shockStart=er+(state.shock.startOffset-1);
+  var shockEnd=shockStart+state.shock.durationYears-1;
+  var shockRet=state.shock.type==='crash'?-(state.shock.magnitude/100):(state.shock.magnitude/100);
+  return buildTimeline(state,function(age){
+    if(age>=shockStart&&age<=shockEnd)return shockRet;
+    return state.retireReturn;
+  });
 }
 
 // ─── UI helpers ────────────────────────────────────────────────────────────
@@ -495,11 +509,12 @@ function lumpSumEditor(){
 }
 
 // ─── Chart ─────────────────────────────────────────────────────────────────
-function balanceChart(rows,rowsB){
+function balanceChart(rows,rowsB,rowsShock){
   var W=980,H=340,pL=72,pR=22,pT=28,pB=42;
   var xMin=rows[0].age,xMax=rows[rows.length-1].age;
   var allVals=rows.map(function(r){return r.combinedClose;});
   if(rowsB)rowsB.forEach(function(r){allVals.push(r.combinedClose);});
+  if(rowsShock)rowsShock.forEach(function(r){allVals.push(r.combinedClose);});
   var yMax=Math.max.apply(null,allVals)*1.08;
   var xD=(xMax-xMin)||1,yD=yMax||1;
   function xp(a){return pL+((a-xMin)/xD)*(W-pL-pR);}
@@ -541,6 +556,17 @@ function balanceChart(rows,rowsB){
   svg.appendChild(svgEl('path',{d:mkPath(rows,'tinaClose'),fill:'none',stroke:'#a06cf0','stroke-width':'2'}));
   svg.appendChild(svgEl('path',{d:mkPath(rows,'combinedClose'),fill:'none',stroke:'#5dd87a','stroke-width':'2.5'}));
   if(rowsB){svg.appendChild(svgEl('path',{d:mkPath(rowsB,'combinedClose'),fill:'none',stroke:'#f0b96c','stroke-width':'2','stroke-dasharray':'6,3'}));}
+  if(rowsShock){
+    var shockCol=state.shock.type==='crash'?'#f06c6c':'#00e5cc';
+    svg.appendChild(svgEl('path',{d:mkPath(rowsShock,'combinedClose'),fill:'none',stroke:shockCol,'stroke-width':'2.5','stroke-dasharray':'8,4'}));
+    // Shade shock band between base and shock
+    var shockPts=rowsShock.map(function(r,i){return xp(r.age).toFixed(1)+','+yp(r.combinedClose).toFixed(1);}).join(' ');
+    var basePts=rows.filter(function(r){return r.phase==='FORECAST';}).map(function(r){return xp(r.age).toFixed(1)+','+yp(r.combinedClose).toFixed(1);}).join(' ');
+    var er2=Math.min(state.robRetireAge,state.tinaRetireAge);
+    var shockStartX=xp(er2+(state.shock.startOffset-1));
+    var shockEndX=xp(er2+(state.shock.startOffset-1)+state.shock.durationYears-1);
+    svg.appendChild(svgEl('rect',{x:String(shockStartX),y:String(pT),width:String(Math.max(0,shockEndX-shockStartX)),height:String(H-pT-pB),fill:shockCol,opacity:'0.07'}));
+  }
 
   // Lump sum markers on combined line
   rows.forEach(function(r){
@@ -561,6 +587,7 @@ function balanceChart(rows,rowsB){
   // Legend
   var legItems=[{l:'Rob',c:'#6c8ef0'},{l:'Tina',c:'#a06cf0'},{l:'Combined A',c:'#5dd87a'}];
   if(rowsB)legItems.push({l:'Combined B',c:'#f0b96c'});
+  if(rowsShock){var sc2=state.shock.type==='crash'?'#f06c6c':'#00e5cc';legItems.push({l:(state.shock.type==='crash'?'Crash':'Boom')+' Shock',c:sc2});}
   legItems.forEach(function(it,j){
     var lx=pL+j*120,ly=H-4;
     svg.appendChild(svgEl('rect',{x:String(lx),y:String(ly-9),width:'10',height:'10',fill:it.c}));
@@ -604,6 +631,7 @@ function balanceChart(rows,rowsB){
       h+='</div>';
     }
     if(rowsB){var rb=rowsB.filter(function(r){return r.age===age;})[0];if(rb)h+='<div style="color:#f0b96c;margin-top:4px">B Combined: '+fmt(rb.combinedClose)+'</div>';}
+    if(rowsShock){var rs=rowsShock.filter(function(r){return r.age===age;})[0];if(rs){var sc=state.shock.type==='crash'?'#f06c6c':'#00e5cc';var diff=rs.combinedClose-row.combinedClose;var diffStr=(diff>=0?'+':'')+fmt(Math.abs(diff));h+='<div style="color:'+sc+';margin-top:4px">Shock Combined: '+fmt(rs.combinedClose)+'<br><span style="font-size:10px;opacity:.8">Impact: '+diffStr+'</span></div>';}}
     tip.innerHTML=h;tip.style.display='block';
     tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-20)+'px';
   });
@@ -630,6 +658,14 @@ function narrative(rows){
     if(a67.pension>0){lines.push('Age Pension estimated at <strong>'+fmt(a67.pension)+'</strong>/yr from age 67.<br><br>');}
     else{lines.push('No Age Pension payable at age 67 — assets exceed threshold. May improve as balances drawdown.<br><br>');}
   }
+  if(state.shock&&state.shock.enabled){
+    var sRows2=buildShockTimeline();
+    if(sRows2){
+      var shkDir=state.shock.type==='crash'?'crash':'boom';
+      var shkImpactNarr=sRows2[sRows2.length-1].combinedClose-a90.combinedClose;
+      lines.push('⚡ <strong>Market shock modelled:</strong> '+state.shock.magnitude+'% '+shkDir+' from retirement year +'+state.shock.startOffset+' for '+state.shock.durationYears+' year'+(state.shock.durationYears>1?'s':'')+'. Impact at age '+state.endAge+': <strong>'+(shkImpactNarr>=0?'+':'')+fmt(shkImpactNarr)+'</strong> vs baseline.<br><br>');
+    }
+  }
   if(ls&&ls.length>0){
     lines.push('<strong>Lump sum events modelled:</strong><br>');
     ls.forEach(function(e){
@@ -651,9 +687,9 @@ root.style.cssText='min-height:100vh;background:#0f1117;color:#e8eaf0;font-famil
 
 var header=el('div',{style:{padding:'12px 20px',background:'#161923',borderBottom:'1px solid #252a3a',display:'flex',justifyContent:'space-between',alignItems:'center'}},[
   el('div',{},[
-    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V8 | SUPER CALCULATOR'),
+    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V9 | SUPER CALCULATOR'),
     el('div',{style:{fontSize:'20px',fontWeight:'900',marginTop:'2px'}},'Superannuation Calculator'),
-    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'Rob & Tina · Phased spend · Lump sums · Scenario B · Pension model')
+    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'Rob & Tina · Phased spend · Lump sums · Scenario B · Shock · Pension model')
   ]),
   el('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}},[
     el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},onClick:function(){window.print();}}, '🖨 Print'),
@@ -687,6 +723,7 @@ function render(){
 
   var rows=buildTimeline(state);
   var rowsB=state.showScenarioB?buildTimelineB():null;
+  var rowsShock=buildShockTimeline();
   var er=Math.min(state.robRetireAge,state.tinaRetireAge);
   var aRet=rows.filter(function(r){return r.age===er;})[0]||rows[0];
   var a67=rows.filter(function(r){return r.age===67;})[0];
@@ -699,6 +736,11 @@ function render(){
   ctrl.appendChild(tog(state.showActuals?'Actuals ON (to FY2025)':'Actuals OFF',state.showActuals,function(){state.showActuals=!state.showActuals;render();}));
   ctrl.appendChild(tog(state.showInflationAdj?'Real $ ON ('+fmtPct(state.inflationRate)+' CPI) ★':'Nominal $ (click for real)',state.showInflationAdj,function(){state.showInflationAdj=!state.showInflationAdj;render();}));
   ctrl.appendChild(tog(state.showScenarioB?'Scenario B: ON (amber dashed)':'Scenario B: OFF',state.showScenarioB,function(){state.showScenarioB=!state.showScenarioB;render();}));
+  var shockOnCol=state.shock.enabled?(state.shock.type==='crash'?'#f06c6c':'#00e5cc'):'#7a8099';
+  var shockLabel=state.shock.enabled?('⚡ Shock: '+state.shock.type.toUpperCase()+' −'+state.shock.magnitude+'% ('+state.shock.durationYears+'yr from ret+'+state.shock.startOffset+')'):'⚡ Market Shock: OFF';
+  ctrl.appendChild(el('button',{style:{padding:'7px 10px',borderRadius:'10px',border:'1px solid #252a3a',
+    background:state.shock.enabled?'rgba(240,108,108,.1)':'transparent',color:shockOnCol,
+    cursor:'pointer',fontWeight:'900',width:'100%',textAlign:'left',marginBottom:'6px'},onClick:function(){state.shock.enabled=!state.shock.enabled;render();}},shockLabel));
 
   ctrl.appendChild(collSec('returns','Returns',function(){
     var d=el('div',{});
@@ -753,6 +795,34 @@ function render(){
 
   ctrl.appendChild(collSec('lumpsums','Lump Sum Events'+(state.lumpSums.length>0?' ('+state.lumpSums.length+')':''),lumpSumEditor));
 
+  ctrl.appendChild(collSec('shock','Market Shock (Seq. of Returns)',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'8px',lineHeight:'1.5'}},'Model a crash or boom in early retirement to stress-test your plan. Shown as a dashed line on the chart.'));
+    d.appendChild(tog(state.shock.enabled?'Shock: ON':'Shock: OFF',state.shock.enabled,function(){state.shock.enabled=!state.shock.enabled;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'6px 0 3px'}},'Type'));
+    d.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'8px'}},[
+      segBtn('Crash (Down)',state.shock.type==='crash',function(){state.shock.type='crash';render();}),
+      segBtn('Boom (Up)',state.shock.type==='boom',function(){state.shock.type='boom';render();})
+    ]));
+    d.appendChild(sld('Magnitude',5,60,5,state.shock.magnitude,state.shock.magnitude+'%',function(v){state.shock.magnitude=v;render();}));
+    d.appendChild(sld('Starts (yrs after retirement)',1,10,1,state.shock.startOffset,'Year '+state.shock.startOffset,function(v){state.shock.startOffset=v;render();}));
+    d.appendChild(sld('Duration (years)',1,10,1,state.shock.durationYears,state.shock.durationYears+(state.shock.durationYears===1?' yr':' yrs'),function(v){state.shock.durationYears=v;render();}));
+    if(state.shock.enabled){
+      var sRows=buildShockTimeline();
+      if(sRows){
+        var er3=Math.min(state.robRetireAge,state.tinaRetireAge);
+        var sEnd=rows[rows.length-1];var ssEnd=sRows[sRows.length-1];
+        var impact=ssEnd.combinedClose-sEnd.combinedClose;
+        var impCol=impact>=0?'#5dd87a':'#f06c6c';
+        d.appendChild(el('div',{style:{marginTop:'8px',padding:'8px',background:'#0a0c12',borderRadius:'8px',fontSize:'11px',lineHeight:'1.6'}},[
+          el('div',{style:{color:'#c0c5d8',fontWeight:'700'}},'Shock Impact at Age '+state.endAge+':'),
+          el('div',{style:{color:impCol,fontWeight:'900',fontSize:'14px',marginTop:'2px'}},(impact>=0?'+':'')+fmt(impact)),
+          el('div',{style:{color:'#5a6080'}},'Base: '+fmt(sEnd.combinedClose)+' → Shock: '+fmt(ssEnd.combinedClose))
+        ]));
+      }
+    }
+    return d;
+  }));
   ctrl.appendChild(collSec('pension','Age Pension',function(){
     var d=el('div',{});
     d.appendChild(tog(state.usePension?'Age Pension: ON':'Age Pension: OFF',state.usePension,function(){state.usePension=!state.usePension;render();}));
@@ -784,13 +854,21 @@ function render(){
     cards.appendChild(card('Age Pension (at 67)',p67?fmt(p67):'—',state.usePension?(p67?'Reduces drawdown':'Below threshold'):'Disabled',p67?'#f0b96c':'#5a6080'));
     cards.appendChild(card(exh?'Exhausted at age':'Still running at',exh?String(exh.age):String(state.endAge),exh?'Household runs out':'Horizon intact',exh?'#f06c6c':'#5dd87a'));
     cards.appendChild(card('Balance at 90',fmt(a90.combinedClose),'Rob '+fmt(a90.robClose)+' · Tina '+fmt(a90.tinaClose),a90.combinedClose>0?'#a06cf0':'#f06c6c'));
+    if(state.shock.enabled&&rowsShock){
+      var baseEnd=rows[rows.length-1];var shkEnd=rowsShock[rowsShock.length-1];
+      var shkImpact=shkEnd.combinedClose-baseEnd.combinedClose;
+      var shkExh=rowsShock.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
+      cards.appendChild(card('Shock at age '+state.endAge,(shkImpact>=0?'+':'')+fmt(shkImpact),
+        (state.shock.type==='crash'?'−':'+')+state.shock.magnitude+'% for '+state.shock.durationYears+'yr · '+(shkExh?'Exhausted age '+shkExh.age:'Survives horizon'),
+        shkImpact>=0?'#00e5cc':'#f06c6c'));
+    }
     if(state.lumpSums.length>0){
       var totalIn=state.lumpSums.filter(function(ls){return ls.type!=='outflow';}).reduce(function(s,ls){return s+ls.amount;},0);
       var totalOut=state.lumpSums.filter(function(ls){return ls.type==='outflow';}).reduce(function(s,ls){return s+ls.amount;},0);
       cards.appendChild(card('Lump sum events',String(state.lumpSums.length)+' event'+(state.lumpSums.length>1?'s':''),'+'+fmt(totalIn)+' in · '+fmt(totalOut)+' out','#f0b96c'));
     }
     rightCol.appendChild(panel('Key Results',cards));
-    rightCol.appendChild(panel('Balance Over Time',balanceChart(rows,rowsB)));
+    rightCol.appendChild(panel('Balance Over Time',balanceChart(rows,rowsB,rowsShock)));
 
     // Timeline table
     var hasLS=rows.some(function(r){return r.lsItems&&r.lsItems.length>0;});
@@ -843,6 +921,14 @@ function render(){
       ['Balance at 90',fmt(a90.combinedClose),'Rob '+fmt(a90.robClose)+' | Tina '+fmt(a90.tinaClose)],
       ['Fund exhaustion',exh?'Age '+exh.age:'Not projected','Horizon: age '+state.endAge]
     ];
+    if(state.shock.enabled&&rowsShock){
+      var baseEnd=rows[rows.length-1];var shkEnd=rowsShock[rowsShock.length-1];
+      var shkImpact=shkEnd.combinedClose-baseEnd.combinedClose;
+      var shkExh=rowsShock.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
+      cards.appendChild(card('Shock at age '+state.endAge,(shkImpact>=0?'+':'')+fmt(shkImpact),
+        (state.shock.type==='crash'?'−':'+')+state.shock.magnitude+'% for '+state.shock.durationYears+'yr · '+(shkExh?'Exhausted age '+shkExh.age:'Survives horizon'),
+        shkImpact>=0?'#00e5cc':'#f06c6c'));
+    }
     if(state.lumpSums.length>0){
       state.lumpSums.forEach(function(ls){
         var sign=ls.type==='outflow'?'-':'+';
@@ -881,7 +967,7 @@ function render(){
         ['Fund exhaustion',exh?'Age '+exh.age:'None',exhB?'Age '+exhB.age:'None']
       ];
       rightCol.appendChild(panel('A vs B Comparison',mkTbl(['Metric','Scenario A','Scenario B'],cmp)));
-      rightCol.appendChild(panel('Chart Comparison',balanceChart(rows,rowsB)));
+      rightCol.appendChild(panel('Chart Comparison',balanceChart(rows,rowsB,rowsShock)));
     }
   }
 }
