@@ -682,15 +682,18 @@ function render(){
     var baseYear=2026-(state.robRetireAge-state.robRetireAge);
     var refAge=48; // actuals start age
     var tableRows=slice.map(function(r){
-      var yrs=state.showInflationAdj?r.age-refAge:0;
+      // Actuals are historical — always show nominal. Only deflate forecast rows.
+      var isActual=r.phase==='ACTUAL';
+      var yrs=(!isActual&&state.showInflationAdj)?r.age-54:0;
+      function fmtCell(n){return isActual?fmt(n):fmtReal(n,yrs);}
       return[
         String(r.age),
-        r.phase==='ACTUAL'?'Actual':'Forecast',
+        isActual?'Actual':'Forecast',
         r.stage||'—',
-        fmtReal(r.robClose,yrs),
-        fmtReal(r.tinaClose,yrs),
-        fmtReal(r.combinedClose,yrs),
-        r.grossSpend?fmt(r.grossSpend):'—',
+        fmtCell(r.robClose),
+        fmtCell(r.tinaClose),
+        fmtCell(r.combinedClose),
+        r.grossSpend?(isActual?fmt(r.grossSpend):fmtReal(r.grossSpend,yrs)):'—',
         r.otherIncome?fmt(r.otherIncome):'—',
         r.pension?fmt(r.pension):'—',
       ];
