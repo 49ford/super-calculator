@@ -270,7 +270,8 @@ function buildTimeline(st){
   if(st.showActuals){
     for(var i=0;i<ACTUALS.length;i++){
       var a=ACTUALS[i],nx=ACTUALS[i+1];
-      var rc=nx?nx.robOpen:FINAL_ACTUAL_CLOSE.rob,tc=nx?nx.tinaOpen:FINAL_ACTUAL_CLOSE.tina;
+      // Each ACTUALS entry IS the closing balance for that year
+      var rc=a.robOpen,tc=a.tinaOpen;
       rows.push({age:a.age,phase:'ACTUAL',stage:'',robClose:rc,tinaClose:tc,combinedClose:rc+tc,grossSpend:0,otherIncome:0,pension:0,robSpend:0,tinaSpend:0,robCC:0,tinaCC:0});
     }
   }
