@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Superannuation Calculator V7</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Superannuation Calculator V8</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-serif}
@@ -12,45 +12,37 @@ html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-s
 ::-webkit-scrollbar-thumb{background:#3a3f55;border-radius:3px}
 input[type=range]{-webkit-appearance:none;height:4px;border-radius:2px;background:#2a2f42;outline:none;cursor:pointer;width:100%}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#6c8ef0;border:2px solid #0f1117}
-input[type=number],input[type=text]{background:#1e2233;border:1px solid #2a3050;border-radius:6px;color:#e8eaf0;padding:6px 10px;font-size:12px;font-family:'DM Mono',monospace;width:100%;outline:none}
+input[type=number],input[type=text]{background:#1e2233;border:1px solid #2a3050;border-radius:6px;color:#e8eaf0;padding:5px 8px;font-size:12px;font-family:'DM Mono',monospace;outline:none}
 input[type=number]:focus,input[type=text]:focus{border-color:#6c8ef0}
-select{background:#1e2233;border:1px solid #2a3050;border-radius:6px;color:#e8eaf0;padding:6px 10px;font-size:12px;outline:none;cursor:pointer}
+input[type=checkbox]{accent-color:#6c8ef0;width:14px;height:14px;cursor:pointer}
+select{background:#1e2233;border:1px solid #2a3050;border-radius:6px;color:#e8eaf0;padding:5px 8px;font-size:12px;outline:none;cursor:pointer}
 button{font-family:'DM Sans','Segoe UI',sans-serif}
-.toggle-btn{cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-size:12px;color:#7a8099;padding:6px 12px;border-radius:6px;border:1px solid #252a3a;background:none;transition:all .2s;white-space:nowrap;user-select:none}
-.toggle-btn.on{color:#5dd87a;border-color:rgba(93,216,122,.4);background:rgba(93,216,122,.07)}
-tr.actual{background:rgba(93,216,122,.04)}
-tr.current{background:rgba(240,185,108,.1)!important;outline:1px solid rgba(240,185,108,.4)}
-tr.forecast{background:rgba(108,142,240,.03)}
-tr.retired-row{background:rgba(255,255,255,.01);opacity:.75}
-tr:hover{background:rgba(255,255,255,.05)!important}
-td,th{white-space:nowrap}
-.mono{font-family:'DM Mono',monospace}
-.pos{color:#5dd87a}.neg{color:#f06c6c}.warn{color:#f0b96c}.muted{color:#5a6080}
-.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:.4px}
-.pill-actual{background:rgba(93,216,122,.15);color:#5dd87a}
-.pill-forecast{background:rgba(108,142,240,.15);color:#6c8ef0}
-.pill-current{background:rgba(240,185,108,.2);color:#f0b96c}
-/* Collapsible sections */
 .section-toggle{width:100%;background:none;border:none;color:#c0c5d8;font-size:12px;font-weight:900;padding:8px 0;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #252a3a;margin-bottom:8px}
 .section-toggle:hover{color:#6c8ef0}
 .section-toggle .arrow{font-size:10px;transition:transform .2s;color:#5a6080}
 .section-toggle.open .arrow{transform:rotate(180deg)}
-.section-body{overflow:hidden;transition:max-height .25s ease}
-/* Chart tooltip */
-#chart-tooltip{position:fixed;background:#1a1d27;border:1px solid #3a3f55;border-radius:8px;padding:10px 14px;font-size:12px;color:#e8eaf0;pointer-events:none;z-index:999;display:none;min-width:180px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
-/* Mobile */
+.section-body{overflow:hidden;transition:max-height .3s ease}
+#chart-tooltip{position:fixed;background:#1a1d27;border:1px solid #3a3f55;border-radius:8px;padding:10px 14px;font-size:12px;color:#e8eaf0;pointer-events:none;z-index:999;display:none;min-width:190px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+.ls-item{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:#0f1117;border:1px solid #252a3a;border-radius:6px;margin-bottom:4px;font-size:11px;color:#c0c5d8}
+.ls-item .ls-del{background:none;border:none;color:#5a6080;cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
+.ls-item .ls-del:hover{color:#f06c6c}
+.ls-badge{display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px}
+.badge-in{background:rgba(93,216,122,.15);color:#5dd87a}
+.badge-out{background:rgba(240,108,108,.15);color:#f06c6c}
+.badge-super{background:rgba(108,142,240,.15);color:#6c8ef0}
+.badge-down{background:rgba(160,108,240,.15);color:#a06cf0}
 @media(max-width:800px){
   .main-grid{grid-template-columns:1fr!important}
   .left-col{position:static!important}
   .cards-grid{grid-template-columns:1fr 1fr!important}
 }
-@media(max-width:480px){
-  .cards-grid{grid-template-columns:1fr!important}
-}
+@media(max-width:480px){.cards-grid{grid-template-columns:1fr!important}}
 @media print{
-  body{background:white;color:#111}
+  body{background:white!important;color:#111!important}
   .no-print{display:none!important}
-  .card,.card-sm{background:#f8f8f8!important;border:1px solid #ddd!important;box-shadow:none!important}
+  #chart-tooltip{display:none!important}
+  .main-grid{grid-template-columns:1fr!important}
+  table{font-size:10px!important}
 }
 </style>
 </head>
@@ -59,49 +51,26 @@ td,th{white-space:nowrap}
 <div id="root"></div>
 <script>
 (function(){
-  function showFatal(msg,err){
-    console.error(msg,err||'');
-    var root=document.getElementById('root');
-    if(!root)return;
-    root.innerHTML='<div style="min-height:100vh;padding:32px;background:#0f1117;color:#f06c6c;font-family:monospace"><h2>⚠️ V7 failed to load</h2><div style="color:#f0b96c;margin:10px 0">'+msg+'</div><div style="color:#7a8099">Open DevTools → Console for details.</div></div>';
-  }
-  try{
-
-// ── Engines ─────────────────────────────────────────────────────────────────
-function buildAccumulationSchedule(p){
-  var rows=[],balance=p.startBalance;
-  for(var age=p.startAge;age<=p.endAge;age++){
-    var open=balance,cc=p.concessionalCap,tax=cc*p.contributionsTax,net=cc-tax;
-    var before=open+net,ret=before*p.returnRate,close=before+ret;
-    rows.push({age,openingBalance:open,concessionalContribution:cc,contributionsTax:tax,netContribution:net,investmentReturn:ret,closingBalance:close});
-    balance=close;
-  }
-  return rows;
+'use strict';
+function showFatal(msg,err){
+  console.error(msg,err||'');
+  var r=document.getElementById('root');
+  if(r)r.innerHTML='<div style="padding:32px;background:#0f1117;color:#f06c6c;font-family:monospace"><h2>V8 Error</h2><pre style="color:#f0b96c;margin-top:12px;white-space:pre-wrap">'+msg+'</pre></div>';
 }
+try{
 
-function buildDrawdownSchedule(p){
-  var rows=[],balance=p.startBalance,exhaustedAtAge=null;
-  for(var age=p.startAge;age<=p.endAge;age++){
-    var open=balance,spend=Math.min(open,p.annualSpend),after=open-spend;
-    var ret=after>0?after*p.returnRate:0,close=after+ret;
-    if(close<=0&&exhaustedAtAge===null)exhaustedAtAge=age;
-    rows.push({age,openingBalance:open,spend,investmentReturn:ret,closingBalance:close});
-    balance=Math.max(0,close);
-  }
-  return{exhaustedAtAge,rows};
-}
-
+// ─── Pension engine ────────────────────────────────────────────────────────
 function estimateAgePension(p){
-  var excessA=Math.max(0,p.financialAssets-p.assetThreshold);
-  var byAssets=Math.max(0,p.fullPension-excessA*p.assetTaperPerDollar);
+  var exA=Math.max(0,p.financialAssets-p.assetThreshold);
+  var byA=Math.max(0,p.fullPension-exA*p.assetTaperPerDollar);
   var deemed=p.financialAssets<=p.deemingThreshold
     ?p.financialAssets*p.deemingRateLow
     :p.deemingThreshold*p.deemingRateLow+(p.financialAssets-p.deemingThreshold)*p.deemingRateHigh;
-  var byIncome=Math.max(0,p.fullPension-Math.max(0,deemed-p.incomeFreeArea)*p.incomeTaperRate);
-  return Math.min(byAssets,byIncome);
+  var byI=Math.max(0,p.fullPension-Math.max(0,deemed-p.incomeFreeArea)*p.incomeTaperRate);
+  return Math.min(byA,byI);
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ─── Constants ─────────────────────────────────────────────────────────────
 var ACTUALS=[
   {age:48,robOpen:462151,tinaOpen:335957},
   {age:49,robOpen:570166,tinaOpen:416543},
@@ -112,21 +81,17 @@ var ACTUALS=[
 ];
 var FINAL_ACTUAL_CLOSE={rob:829122.86,tina:658880};
 var HORIZON=41;
-
-function concessionalForAge(age,caps){
-  if(age===54)return caps.at54;
-  if(age>54)return caps.after54;
-  return 0;
-}
+function ccForAge(age,caps){return age===54?caps.at54:age>54?caps.after54:0;}
 function thirdSize(){return Math.ceil(HORIZON/3);}
-function stageIndex(i){var t=thirdSize();return i<t?0:i<t*2?1:2;}
-function stageName(s){return s===0?'Golden':s===1?'Silver':'Legacy';}
+function stageIdx(i){var t=thirdSize();return i<t?0:i<t*2?1:2;}
+function stageName(s){return['Golden','Silver','Legacy'][s];}
 
-// ── Default state factory ────────────────────────────────────────────────────
+// ─── Default state ─────────────────────────────────────────────────────────
 function defaultState(){
   return{
     tab:'super',
     showActuals:true,
+    showAllRows:false,
     endAge:90,
     robRetireAge:60,
     tinaRetireAge:60,
@@ -143,7 +108,6 @@ function defaultState(){
     spendLegacy:285000,
     spendPhase:'Golden',
     splitPct:55,
-    otherAssets:500000,
     otherAssetsBuckets:{realestate:500000,shares:0,other:0},
     otherAssetsBucket:'realestate',
     otherAssetsReturn:0.06,
@@ -160,72 +124,60 @@ function defaultState(){
     deemingRateHigh:0.0225,
     incomeFreeArea:9000,
     incomeTaperRate:0.5,
-    // V7 new
     showInflationAdj:false,
     inflationRate:0.035,
     showScenarioB:false,
-    scenarioBLabel:'Scenario B',
     caps:{at54:30000,after54:32500},
-    // Scenario B overrides
     scenarioB:{
-      robWorkReturn:0.08,
-      tinaWorkReturn:0.08,
-      retireReturn:0.06,
-      robRetireAge:62,
-      tinaRetireAge:62,
-      spendGolden:250000,
-      spendSilver:180000,
-      spendLegacy:250000,
+      robWorkReturn:0.08,tinaWorkReturn:0.08,retireReturn:0.06,
+      robRetireAge:62,tinaRetireAge:62,
+      spendGolden:250000,spendSilver:180000,spendLegacy:250000
     },
-    // Section collapsed state
-    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true}
+    lumpSums:[],
+    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false}
   };
 }
 
-// ── State with localStorage ──────────────────────────────────────────────────
-var LS_KEY='supercalc_v7_state';
+// ─── localStorage ──────────────────────────────────────────────────────────
+var LS_KEY='supercalc_v8_state';
 function loadState(){
   try{
     var raw=localStorage.getItem(LS_KEY);
-    if(!raw)return defaultState();
-    var saved=JSON.parse(raw);
-    var def=defaultState();
-    // Merge saved over defaults so new keys always exist
-    function deepMerge(d,s){
-      var out=Object.assign({},d);
-      Object.keys(s).forEach(function(k){
-        if(k in d&&d[k]!==null&&typeof d[k]==='object'&&!Array.isArray(d[k])&&typeof s[k]==='object'&&s[k]!==null){
-          out[k]=deepMerge(d[k],s[k]);
-        } else {
-          out[k]=s[k];
-        }
-      });
-      return out;
+    if(!raw){
+      // Migrate from v7 if present
+      var v7=localStorage.getItem('supercalc_v7_state');
+      if(v7){var s=JSON.parse(v7);delete s.tab;return deepMerge(defaultState(),s);}
+      return defaultState();
     }
-    return deepMerge(def,saved);
+    return deepMerge(defaultState(),JSON.parse(raw));
   }catch(e){return defaultState();}
 }
-function saveState(){
-  try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}
+function deepMerge(d,s){
+  var out=Object.assign({},d);
+  Object.keys(s).forEach(function(k){
+    if(k in d&&d[k]!==null&&typeof d[k]==='object'&&!Array.isArray(d[k])&&s[k]!==null&&typeof s[k]==='object'){
+      out[k]=deepMerge(d[k],s[k]);
+    }else{out[k]=s[k];}
+  });
+  return out;
 }
-function resetState(){
-  localStorage.removeItem(LS_KEY);
-  var s=defaultState();
-  s.tab=state.tab;
-  Object.assign(state,s);
-  render();
-}
+function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}}
+function resetState(){localStorage.removeItem(LS_KEY);var t=state.tab;Object.assign(state,defaultState());state.tab=t;render();}
 
 var state=loadState();
 
-// ── DOM helpers ──────────────────────────────────────────────────────────────
+// Transient UI state (not saved)
+var lsForm={label:'',age:60,amount:100000,who:'both',type:'inflow',downsizer:false};
+var lsFormOpen=false;
+
+// ─── DOM helpers ───────────────────────────────────────────────────────────
 function el(tag,attrs,children){
   if(!attrs)attrs={};if(!children)children=[];
   var n=document.createElement(tag);
   Object.keys(attrs).forEach(function(k){
     var v=attrs[k];
     if(k==='style'){typeof v==='object'?Object.assign(n.style,v):n.setAttribute('style',v);}
-    else if(k.indexOf('on')===0&&typeof v==='function'){n.addEventListener(k.slice(2).toLowerCase(),v);}
+    else if(k.slice(0,2)==='on'&&typeof v==='function'){n.addEventListener(k.slice(2).toLowerCase(),v);}
     else{n.setAttribute(k,String(v));}
   });
   (Array.isArray(children)?children:[children]).forEach(function(c){
@@ -234,182 +186,323 @@ function el(tag,attrs,children){
   });
   return n;
 }
-var SVG_NS='http://www.w3.org/2000/svg';
-function svgEl(tag,attrs,children){
-  if(!attrs)attrs={};if(!children)children=[];
-  var n=document.createElementNS(SVG_NS,tag);
-  Object.keys(attrs).forEach(function(k){
-    var v=attrs[k];
-    if(k==='style'){
-      typeof v==='object'?n.setAttribute('style',Object.keys(v).map(function(a){return a+':'+v[a];}).join(';')):n.setAttribute('style',v);
-    } else {n.setAttribute(k,String(v));}
+var SVGNS='http://www.w3.org/2000/svg';
+function svgEl(tag,a,ch){
+  if(!a)a={};if(!ch)ch=[];
+  var n=document.createElementNS(SVGNS,tag);
+  Object.keys(a).forEach(function(k){
+    var v=a[k];
+    if(k==='style'){typeof v==='object'?n.setAttribute('style',Object.keys(v).map(function(x){return x+':'+v[x];}).join(';')):n.setAttribute('style',v);}
+    else{n.setAttribute(k,String(v));}
   });
-  (Array.isArray(children)?children:[children]).forEach(function(c){
+  (Array.isArray(ch)?ch:[ch]).forEach(function(c){
     if(c==null)return;
     typeof c==='string'?n.appendChild(document.createTextNode(c)):n.appendChild(c);
   });
   return n;
 }
-
 function fmt(n){return'$'+Math.round(n).toLocaleString('en-AU');}
-function fmtPct(dec){return(dec*100).toFixed(2)+'%';}
-function fmtReal(n,yearsFromNow){
+function fmtPct(d){return(d*100).toFixed(2)+'%';}
+function fmtReal(n,yrs){
   if(!state.showInflationAdj)return fmt(n);
-  var real=n/Math.pow(1+state.inflationRate,yearsFromNow);
-  return fmt(real)+'*';
+  return fmt(n/Math.pow(1+state.inflationRate,yrs))+'*';
 }
+function otherTotal(){var b=state.otherAssetsBuckets;return(b.realestate||0)+(b.shares||0)+(b.other||0);}
 
-function otherAssetsTotal(){
-  var b=state.otherAssetsBuckets||{};
-  return(b.realestate||0)+(b.shares||0)+(b.other||0);
-}
-
-// ── Timeline builder ─────────────────────────────────────────────────────────
+// ─── Timeline builder ──────────────────────────────────────────────────────
 function buildTimeline(st){
   var rows=[];
   if(st.showActuals){
-    for(var i=0;i<ACTUALS.length;i++){
-      var a=ACTUALS[i],nx=ACTUALS[i+1];
-      // Each ACTUALS entry IS the closing balance for that year
-      var rc=a.robOpen,tc=a.tinaOpen;
-      rows.push({age:a.age,phase:'ACTUAL',stage:'',robClose:rc,tinaClose:tc,combinedClose:rc+tc,grossSpend:0,otherIncome:0,pension:0,robSpend:0,tinaSpend:0,robCC:0,tinaCC:0});
-    }
+    ACTUALS.forEach(function(a){
+      rows.push({age:a.age,phase:'ACTUAL',stage:'',
+        robClose:a.robOpen,tinaClose:a.tinaOpen,combinedClose:a.robOpen+a.tinaOpen,
+        grossSpend:0,otherIncome:0,pension:0,robSpend:0,tinaSpend:0,
+        robCC:0,tinaCC:0,lsRob:0,lsTina:0,lsItems:[]});
+    });
   }
-  var robBal=st.robSeed,tinaBal=st.tinaSeed;
+  var rBal=st.robSeed,tBal=st.tinaSeed;
   var earliestRetire=Math.min(st.robRetireAge,st.tinaRetireAge);
-  var totalOther=otherAssetsTotal();
+  var totalOther=otherTotal();
   for(var age=54;age<=st.endAge;age++){
-    var robWorking=age<st.robRetireAge,tinaWorking=age<st.tinaRetireAge;
-    var robCC=robWorking?concessionalForAge(age,st.caps):0;
-    var tinaCC=tinaWorking?concessionalForAge(age,st.caps):0;
-    if(robWorking){var nR=robCC*(1-st.contribTax),bR=robBal+nR;robBal=bR+bR*st.robWorkReturn;}
-    if(tinaWorking){var nT=tinaCC*(1-st.contribTax),bT=tinaBal+nT;tinaBal=bT+bT*st.tinaWorkReturn;}
-    var anyRetired=!robWorking||!tinaWorking,bothRetired=!robWorking&&!tinaWorking;
-    var yearIndex=(anyRetired&&age>=earliestRetire)?(age-earliestRetire):-1;
-    var stage=yearIndex>=0?stageName(stageIndex(yearIndex)):'';
+    var rWork=age<st.robRetireAge,tWork=age<st.tinaRetireAge;
+    var rCC=rWork?ccForAge(age,st.caps):0;
+    var tCC=tWork?ccForAge(age,st.caps):0;
+    // Accumulation returns
+    if(rWork){var nr=rCC*(1-st.contribTax),br=rBal+nr;rBal=br+br*st.robWorkReturn;}
+    if(tWork){var nt=tCC*(1-st.contribTax),bt=tBal+nt;tBal=bt+bt*st.tinaWorkReturn;}
+    var anyRet=!rWork||!tWork,bothRet=!rWork&&!tWork;
+    var yIdx=(anyRet&&age>=earliestRetire)?(age-earliestRetire):-1;
+    var stage=yIdx>=0?stageName(stageIdx(yIdx)):'';
+    // Retirement returns
+    if(!rWork)rBal=rBal+rBal*st.retireReturn;
+    if(!tWork)tBal=tBal+tBal*st.retireReturn;
+    // ── Lump sums applied after returns ────────────────────────────────────
+    var lsRob=0,lsTina=0,lsItems=[];
+    (st.lumpSums||[]).forEach(function(ls){
+      if(ls.age!==age)return;
+      lsItems.push(ls);
+      var sign=ls.type==='outflow'?-1:1;
+      var amt=sign*Math.abs(ls.amount);
+      if(ls.who==='rob'){lsRob+=amt;}
+      else if(ls.who==='tina'){lsTina+=amt;}
+      else{lsRob+=amt/2;lsTina+=amt/2;}
+    });
+    rBal=Math.max(0,rBal+lsRob);
+    tBal=Math.max(0,tBal+lsTina);
+    // ── Other income ────────────────────────────────────────────────────────
     var otherIncome=0;
-    if(anyRetired&&age>=st.otherIncomeStartAge){
-      var yrsOI=age-st.otherIncomeStartAge;
-      otherIncome=totalOther*st.otherAssetsReturn*Math.pow(1+st.otherAssetsCpi,yrsOI);
+    if(anyRet&&age>=st.otherIncomeStartAge){
+      otherIncome=totalOther*st.otherAssetsReturn*Math.pow(1+st.otherAssetsCpi,age-st.otherIncomeStartAge);
     }
+    // ── Age pension ─────────────────────────────────────────────────────────
     var pension=0;
-    if(st.usePension&&anyRetired&&age>=67){
+    if(st.usePension&&anyRet&&age>=67){
       pension=estimateAgePension({
-        financialAssets:robBal+tinaBal+totalOther,homeowner:st.homeowner,
-        fullPension:st.fullPension,assetThreshold:st.assetThreshold,assetTaperPerDollar:st.assetTaperPerDollar,
-        deemingThreshold:st.deemingThreshold,deemingRateLow:st.deemingRateLow,deemingRateHigh:st.deemingRateHigh,
+        financialAssets:rBal+tBal+totalOther,homeowner:st.homeowner,
+        fullPension:st.fullPension,assetThreshold:st.assetThreshold,
+        assetTaperPerDollar:st.assetTaperPerDollar,deemingThreshold:st.deemingThreshold,
+        deemingRateLow:st.deemingRateLow,deemingRateHigh:st.deemingRateHigh,
         incomeFreeArea:st.incomeFreeArea,incomeTaperRate:st.incomeTaperRate
       });
     }
-    var grossSpend=yearIndex>=0?(yearIndex<thirdSize()?st.spendGolden:yearIndex<thirdSize()*2?st.spendSilver:st.spendLegacy):0;
-    var netSuperSpend=Math.max(0,grossSpend-pension-otherIncome);
-    if(!robWorking)robBal=robBal+robBal*st.retireReturn;
-    if(!tinaWorking)tinaBal=tinaBal+tinaBal*st.retireReturn;
-    var robSpend=0,tinaSpend=0;
-    if(netSuperSpend>0){
-      if(bothRetired){
-        var tR=netSuperSpend*(st.splitPct/100),tT=netSuperSpend-tR;
-        robSpend=Math.min(robBal,tR);tinaSpend=Math.min(tinaBal,tT);
-        var rem=netSuperSpend-(robSpend+tinaSpend);
-        if(rem>0){var rA=Math.max(0,robBal-robSpend),rE=Math.min(rA,rem);robSpend+=rE;rem-=rE;tinaSpend+=Math.min(Math.max(0,tinaBal-tinaSpend),rem);}
-      } else if(!robWorking){robSpend=Math.min(robBal,netSuperSpend);}
-      else{tinaSpend=Math.min(tinaBal,netSuperSpend);}
+    // ── Spend ────────────────────────────────────────────────────────────────
+    var grossSpend=yIdx>=0?(yIdx<thirdSize()?st.spendGolden:yIdx<thirdSize()*2?st.spendSilver:st.spendLegacy):0;
+    var netSpend=Math.max(0,grossSpend-pension-otherIncome);
+    var rSpend=0,tSpend=0;
+    if(netSpend>0){
+      if(bothRet){
+        var tR=netSpend*(st.splitPct/100),tT=netSpend-tR;
+        rSpend=Math.min(rBal,tR);tSpend=Math.min(tBal,tT);
+        var rem=netSpend-(rSpend+tSpend);
+        if(rem>0){var rE=Math.min(Math.max(0,rBal-rSpend),rem);rSpend+=rE;rem-=rE;tSpend+=Math.min(Math.max(0,tBal-tSpend),rem);}
+      }else if(!rWork){rSpend=Math.min(rBal,netSpend);}
+      else{tSpend=Math.min(tBal,netSpend);}
     }
-    robBal=Math.max(0,robBal-robSpend);
-    tinaBal=Math.max(0,tinaBal-tinaSpend);
-    rows.push({age,phase:'FORECAST',stage,robClose:robBal,tinaClose:tinaBal,combinedClose:robBal+tinaBal,grossSpend,otherIncome,pension,robSpend,tinaSpend,robCC,tinaCC});
+    rBal=Math.max(0,rBal-rSpend);
+    tBal=Math.max(0,tBal-tSpend);
+    rows.push({age,phase:'FORECAST',stage,
+      robClose:rBal,tinaClose:tBal,combinedClose:rBal+tBal,
+      grossSpend,otherIncome,pension,robSpend:rSpend,tinaSpend:tSpend,
+      robCC:rCC,tinaCC:tCC,lsRob,lsTina,lsItems});
   }
   var startAge=st.showActuals?48:54;
   return rows.filter(function(r){return r.age>=startAge;});
 }
-
-// Scenario B timeline uses scenarioB overrides merged onto main state
-function buildScenarioBTimeline(){
-  var sb=Object.assign({},state,state.scenarioB,{caps:state.caps});
+function buildTimelineB(){
+  var sb=Object.assign({},state,state.scenarioB,{caps:state.caps,lumpSums:state.lumpSums});
   return buildTimeline(sb);
 }
 
-// ── UI Components ────────────────────────────────────────────────────────────
+// ─── UI helpers ────────────────────────────────────────────────────────────
 function panel(title,content){
   return el('div',{style:{background:'#161923',border:'1px solid #252a3a',borderRadius:'12px',padding:'14px',marginBottom:'14px'}},[
     el('div',{style:{fontSize:'12px',color:'#7a8099',fontWeight:'900',marginBottom:'10px'}},title),
-    content
-  ]);
+    content]);
 }
-
-function collapsibleSection(key,title,contentFn){
-  var isOpen=!state.collapsed[key];
-  var btn=el('button',{class:'section-toggle'+(isOpen?' open':''),onClick:function(){
+function collSec(key,title,fn){
+  var open=!state.collapsed[key];
+  var btn=el('button',{class:'section-toggle'+(open?' open':''),onClick:function(){
     state.collapsed[key]=!state.collapsed[key];saveState();
-    var body=btn.nextSibling;
-    var arrow=btn.querySelector('.arrow');
-    if(!state.collapsed[key]){body.style.maxHeight=body.scrollHeight+'px';arrow.style.transform='rotate(180deg)';}
-    else{body.style.maxHeight='0';arrow.style.transform='rotate(0deg)';}
+    var body=btn.nextSibling,arrow=btn.querySelector('.arrow');
+    body.style.maxHeight=state.collapsed[key]?'0':body.scrollHeight+'px';
+    arrow.style.transform=state.collapsed[key]?'rotate(0deg)':'rotate(180deg)';
   }},[title,el('span',{class:'arrow'},'▼')]);
-  var body=el('div',{class:'section-body',style:{maxHeight:isOpen?'2000px':'0'}});
-  body.appendChild(contentFn());
-  var wrap=el('div',{style:{marginBottom:'12px'}});
-  wrap.appendChild(btn);wrap.appendChild(body);
-  return wrap;
+  var body=el('div',{class:'section-body',style:{maxHeight:open?'2000px':'0'}});
+  body.appendChild(fn());
+  var w=el('div',{style:{marginBottom:'10px'}});w.appendChild(btn);w.appendChild(body);
+  return w;
 }
-
-function toggle(label,on,onClick){
-  return el('button',{style:{padding:'7px 10px',borderRadius:'10px',border:'1px solid #252a3a',background:on?'rgba(93,216,122,.12)':'transparent',color:on?'#5dd87a':'#7a8099',cursor:'pointer',fontWeight:'900',width:'100%',textAlign:'left',marginBottom:'6px'},onClick:onClick},label);
+function tog(label,on,fn){
+  return el('button',{style:{padding:'7px 10px',borderRadius:'10px',border:'1px solid #252a3a',
+    background:on?'rgba(93,216,122,.12)':'transparent',color:on?'#5dd87a':'#7a8099',
+    cursor:'pointer',fontWeight:'900',width:'100%',textAlign:'left',marginBottom:'6px'},onClick:fn},label);
 }
-
-function slider(label,min,max,step,value,display,onInput){
+function sld(label,min,max,step,val,disp,fn){
   return el('div',{style:{margin:'8px 0'}},[
     el('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'4px'}},[
       el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700'}},label),
-      el('div',{style:{fontSize:'12px',color:'#6c8ef0',fontFamily:'monospace'}},display)
+      el('div',{style:{fontSize:'12px',color:'#6c8ef0',fontFamily:'monospace'}},disp)
     ]),
-    el('input',{type:'range',min:String(min),max:String(max),step:String(step),value:String(value),style:{width:'100%'},onInput:function(e){onInput(+e.target.value);}})
+    el('input',{type:'range',min:String(min),max:String(max),step:String(step),value:String(val),
+      style:{width:'100%'},onInput:function(e){fn(+e.target.value);}})
   ]);
 }
-
-function numInput(label,value,onInput,opts){
+function numI(label,val,fn,opts){
   opts=opts||{};
-  var inp=el('input',{type:'number',value:String(value),step:String(opts.step||1),min:String(opts.min||0)});
-  inp.addEventListener('change',function(e){onInput(+e.target.value);});
-  return el('div',{style:{margin:'6px 0'}},[
-    el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',marginBottom:'3px'}},label),
-    inp
-  ]);
+  var inp=el('input',{type:'number',value:String(val),step:String(opts.step||1),
+    min:String(opts.min||0),style:{width:'100%'}});
+  inp.addEventListener('change',function(e){fn(+e.target.value);});
+  return el('div',{style:{margin:'5px 0'}},[
+    el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',marginBottom:'2px'}},label),
+    inp]);
 }
-
-function segBtn(label,active,onClick){
-  return el('button',{style:{padding:'5px 10px',borderRadius:'8px',border:'1px solid #252a3a',background:active?'rgba(108,142,240,.18)':'transparent',color:active?'#6c8ef0':'#7a8099',cursor:'pointer',fontWeight:'900',fontSize:'12px'},onClick:onClick},label);
+function segBtn(label,active,fn){
+  return el('button',{style:{padding:'5px 9px',borderRadius:'7px',border:'1px solid #252a3a',
+    background:active?'rgba(108,142,240,.18)':'transparent',color:active?'#6c8ef0':'#7a8099',
+    cursor:'pointer',fontWeight:'900',fontSize:'11px'},onClick:fn},label);
 }
-
-function card(title,value,subtitle,color){
+function card(title,val,sub,col){
   return el('div',{style:{background:'#161923',border:'1px solid #252a3a',borderRadius:'12px',padding:'14px'}},[
     el('div',{style:{fontSize:'11px',color:'#7a8099',fontWeight:'800'}},title),
-    el('div',{style:{fontSize:'20px',fontWeight:'900',color:color||'#6c8ef0',marginTop:'5px'}},value),
-    el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},subtitle)
-  ]);
+    el('div',{style:{fontSize:'20px',fontWeight:'900',color:col||'#6c8ef0',marginTop:'5px'}},val),
+    el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},sub)]);
 }
-
-function mkTable(headers,rows){
-  var tbl=el('table',{style:{width:'100%',borderCollapse:'collapse',background:'#0f1117',border:'1px solid #252a3a',borderRadius:'12px',overflow:'hidden',fontSize:'12px'}});
-  tbl.appendChild(el('thead',{},[el('tr',{},headers.map(function(h){return el('th',{style:{textAlign:'right',padding:'7px 10px',color:'#7a8099',fontSize:'11px',borderBottom:'1px solid #252a3a'}},h);}))]) );
+function mkTbl(headers,rows){
+  var tbl=el('table',{style:{width:'100%',borderCollapse:'collapse',background:'#0f1117',
+    border:'1px solid #252a3a',borderRadius:'12px',overflow:'hidden',fontSize:'12px'}});
+  tbl.appendChild(el('thead',{},[el('tr',{},headers.map(function(h){
+    return el('th',{style:{textAlign:'right',padding:'6px 10px',color:'#7a8099',fontSize:'11px',borderBottom:'1px solid #252a3a'}},h);
+  }))]));
   var tbody=el('tbody');
   rows.forEach(function(r,i){
     tbody.appendChild(el('tr',{style:{background:i%2===0?'rgba(255,255,255,.02)':'transparent'}},
-      r.map(function(cell){return el('td',{style:{textAlign:'right',padding:'7px 10px',fontFamily:'monospace',color:'#c0c5d8',borderBottom:'1px solid rgba(37,42,58,.3)'}},cell);})));
+      r.map(function(c){return el('td',{style:{textAlign:'right',padding:'6px 10px',fontFamily:'monospace',
+        color:'#c0c5d8',borderBottom:'1px solid rgba(37,42,58,.3)'}},c);})));
   });
   tbl.appendChild(tbody);return tbl;
 }
 
-// ── Chart with tooltips + markers ────────────────────────────────────────────
+// ─── Lump sum editor ───────────────────────────────────────────────────────
+function lumpSumEditor(){
+  var wrap=el('div',{});
+
+  // Event form (show/hide)
+  var formDiv=el('div',{style:{background:'#0a0c12',border:'1px solid #2a3050',borderRadius:'8px',padding:'10px',marginBottom:'8px',display:lsFormOpen?'':'none'}});
+
+  var labelInp=el('input',{type:'text',placeholder:'Label (e.g. Inheritance, Downsize)',value:lsForm.label,style:{width:'100%',marginBottom:'6px'}});
+  labelInp.addEventListener('input',function(e){lsForm.label=e.target.value;});
+  formDiv.appendChild(labelInp);
+
+  var row1=el('div',{style:{display:'flex',gap:'6px',marginBottom:'6px'}});
+  var ageInp=el('input',{type:'number',placeholder:'Age',value:String(lsForm.age),min:'54',max:'100',step:'1',style:{width:'60px'}});
+  ageInp.addEventListener('change',function(e){lsForm.age=+e.target.value;});
+  var amtInp=el('input',{type:'number',placeholder:'Amount $',value:String(lsForm.amount),min:'0',step:'10000',style:{flex:'1'}});
+  amtInp.addEventListener('change',function(e){lsForm.amount=+e.target.value;});
+  row1.appendChild(el('div',{style:{display:'flex',flexDirection:'column',gap:'2px'}},[
+    el('div',{style:{fontSize:'10px',color:'#5a6080'}},'Age'),ageInp]));
+  row1.appendChild(el('div',{style:{display:'flex',flexDirection:'column',gap:'2px',flex:'1'}},[
+    el('div',{style:{fontSize:'10px',color:'#5a6080'}},'Amount ($)'),amtInp]));
+  formDiv.appendChild(row1);
+
+  // Who
+  formDiv.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginBottom:'3px'}},'Who receives/pays'));
+  var whoRow=el('div',{style:{display:'flex',gap:'4px',marginBottom:'6px'}});
+  ['Rob','Tina','Both'].forEach(function(w){
+    var k=w.toLowerCase();
+    var b=segBtn(w,lsForm.who===k,function(){lsForm.who=k;refreshWho();});
+    b.setAttribute('data-who',k);
+    whoRow.appendChild(b);
+  });
+  formDiv.appendChild(whoRow);
+
+  function refreshWho(){
+    whoRow.querySelectorAll('button').forEach(function(b){
+      var active=lsForm.who===b.getAttribute('data-who');
+      b.style.background=active?'rgba(108,142,240,.18)':'transparent';
+      b.style.color=active?'#6c8ef0':'#7a8099';
+    });
+  }
+
+  // Type
+  formDiv.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginBottom:'3px'}},'Type'));
+  var typeRow=el('div',{style:{display:'flex',gap:'4px',marginBottom:'6px'}});
+  [{k:'inflow',l:'Inflow'},{k:'outflow',l:'Outflow'},{k:'super',l:'To Super'}].forEach(function(t){
+    var b=segBtn(t.l,lsForm.type===t.k,function(){lsForm.type=t.k;refreshType();downsizeRow.style.display=t.k==='super'?'':'none';});
+    b.setAttribute('data-type',t.k);
+    typeRow.appendChild(b);
+  });
+  formDiv.appendChild(typeRow);
+
+  function refreshType(){
+    typeRow.querySelectorAll('button').forEach(function(b){
+      var active=lsForm.type===b.getAttribute('data-type');
+      b.style.background=active?'rgba(108,142,240,.18)':'transparent';
+      b.style.color=active?'#6c8ef0':'#7a8099';
+    });
+  }
+
+  // Downsizer (only for super type)
+  var dsChk=el('input',{type:'checkbox'});
+  dsChk.checked=lsForm.downsizer;
+  dsChk.addEventListener('change',function(){lsForm.downsizer=dsChk.checked;});
+  var downsizeRow=el('div',{style:{display:lsForm.type==='super'?'flex':'none',alignItems:'center',gap:'6px',marginBottom:'6px',fontSize:'11px',color:'#a06cf0'}});
+  downsizeRow.appendChild(dsChk);
+  downsizeRow.appendChild(document.createTextNode('Downsizer contribution (non-concessional, age 55+)'));
+  formDiv.appendChild(downsizeRow);
+
+  // Buttons
+  var btnRow=el('div',{style:{display:'flex',gap:'6px'}});
+  var addBtn=el('button',{style:{flex:'1',padding:'6px',borderRadius:'7px',border:'none',
+    background:'#6c8ef0',color:'#fff',cursor:'pointer',fontWeight:'900',fontSize:'12px'},
+    onClick:function(){
+      var lbl=(lsForm.label||'').trim();
+      if(!lbl){labelInp.focus();return;}
+      if(!lsForm.amount){amtInp.focus();return;}
+      state.lumpSums.push({
+        id:'ls_'+Date.now(),
+        label:lbl,age:lsForm.age,amount:lsForm.amount,
+        who:lsForm.who,type:lsForm.type,downsizer:lsForm.downsizer
+      });
+      state.lumpSums.sort(function(a,b){return a.age-b.age;});
+      lsForm.label='';lsForm.amount=100000;
+      lsFormOpen=false;
+      render();
+    }},'+ Add Event');
+  var cancelBtn=el('button',{style:{padding:'6px 10px',borderRadius:'7px',border:'1px solid #252a3a',
+    background:'none',color:'#7a8099',cursor:'pointer',fontSize:'12px'},
+    onClick:function(){lsFormOpen=false;render();}},'Cancel');
+  btnRow.appendChild(addBtn);btnRow.appendChild(cancelBtn);
+  formDiv.appendChild(btnRow);
+  wrap.appendChild(formDiv);
+
+  // Add event button (shows form)
+  if(!lsFormOpen){
+    var showFormBtn=el('button',{style:{width:'100%',padding:'7px',borderRadius:'8px',
+      border:'1px dashed #3a3f55',background:'none',color:'#6c8ef0',cursor:'pointer',
+      fontWeight:'900',fontSize:'12px',marginBottom:'8px'},
+      onClick:function(){lsFormOpen=true;render();}},
+      '+ Add Lump Sum Event');
+    wrap.appendChild(showFormBtn);
+  }
+
+  // Event list
+  if(state.lumpSums.length===0){
+    wrap.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',padding:'6px 0'}},'No events added yet.'));
+  } else {
+    state.lumpSums.forEach(function(ls){
+      var typeCol=ls.type==='inflow'?'#5dd87a':ls.type==='outflow'?'#f06c6c':'#6c8ef0';
+      var typeLabel=ls.type==='inflow'?'IN':ls.type==='outflow'?'OUT':'SUPER';
+      var sign=ls.type==='outflow'?'-':'+';
+      var item=el('div',{class:'ls-item'},[
+        el('div',{style:{flex:'1',minWidth:0}},[
+          el('span',{style:{fontWeight:'700',color:'#e8eaf0'}},ls.label+' '),
+          el('span',{style:{color:'#5a6080'}},'Age '+ls.age+' · '),
+          el('span',{style:{color:ls.type==='outflow'?'#f06c6c':'#5dd87a',fontWeight:'700'}},sign+fmt(ls.amount)),
+          el('span',{style:{marginLeft:'4px',fontSize:'10px',color:'#5a6080'}},
+            ls.who==='rob'?'(Rob)':ls.who==='tina'?'(Tina)':'(Both)'),
+          el('span',{class:'ls-badge '+(ls.type==='inflow'?'badge-in':ls.type==='outflow'?'badge-out':'badge-super')},typeLabel),
+          ls.downsizer?el('span',{class:'ls-badge badge-down'},'↓DS'):null
+        ]),
+        el('button',{class:'ls-del',title:'Remove',onClick:function(){
+          state.lumpSums=state.lumpSums.filter(function(x){return x.id!==ls.id;});
+          render();
+        }},'×')
+      ]);
+      wrap.appendChild(item);
+    });
+  }
+  return wrap;
+}
+
+// ─── Chart ─────────────────────────────────────────────────────────────────
 function balanceChart(rows,rowsB){
-  var W=980,H=320,pL=70,pR=20,pT=24,pB=40;
-  var ages=rows.map(function(r){return r.age;});
-  var xMin=ages[0],xMax=ages[ages.length-1];
+  var W=980,H=340,pL=72,pR=22,pT=28,pB=42;
+  var xMin=rows[0].age,xMax=rows[rows.length-1].age;
   var allVals=rows.map(function(r){return r.combinedClose;});
   if(rowsB)rowsB.forEach(function(r){allVals.push(r.combinedClose);});
   var yMax=Math.max.apply(null,allVals)*1.08;
   var xD=(xMax-xMin)||1,yD=yMax||1;
-  function xp(age){return pL+((age-xMin)/xD)*(W-pL-pR);}
+  function xp(a){return pL+((a-xMin)/xD)*(W-pL-pR);}
   function yp(v){return pT+(1-(v/yD))*(H-pT-pB);}
   function mkPath(arr,key){
     return arr.map(function(r,i){return(i===0?'M ':'L ')+xp(r.age).toFixed(1)+' '+yp(r[key]).toFixed(1);}).join(' ');
@@ -418,344 +511,376 @@ function balanceChart(rows,rowsB){
   var svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H,style:'width:100%;height:auto;display:block;cursor:crosshair'});
   svg.appendChild(svgEl('rect',{x:'0',y:'0',width:String(W),height:String(H),fill:'#0f1117'}));
 
-  // Grid lines
-  for(var i=0;i<=4;i++){
-    var v=yMax*i/4,yy=yp(v);
-    svg.appendChild(svgEl('line',{x1:String(pL),y1:String(yy),x2:String(W-pR),y2:String(yy),stroke:'rgba(255,255,255,.06)'}));
-    svg.appendChild(svgEl('text',{x:String(pL-8),y:String(yy+4),fill:'#5a6080','text-anchor':'end',style:'font-family:monospace;font-size:11px'},fmt(v)));
+  // Grid
+  for(var gi=0;gi<=4;gi++){
+    var gv=yMax*gi/4,gy=yp(gv);
+    svg.appendChild(svgEl('line',{x1:String(pL),y1:String(gy),x2:String(W-pR),y2:String(gy),stroke:'rgba(255,255,255,.05)'}));
+    svg.appendChild(svgEl('text',{x:String(pL-6),y:String(gy+4),fill:'#5a6080','text-anchor':'end',style:'font-family:monospace;font-size:10px'},fmt(gv)));
   }
-  // X axis labels
-  var ageStep=Math.ceil((xMax-xMin)/8);
-  for(var age2=xMin;age2<=xMax;age2+=ageStep){
-    svg.appendChild(svgEl('text',{x:String(xp(age2)),y:String(H-pB+16),fill:'#5a6080','text-anchor':'middle',style:'font-family:monospace;font-size:11px'},String(age2)));
+  // X labels
+  var step=Math.max(1,Math.ceil((xMax-xMin)/8));
+  for(var xa=xMin;xa<=xMax;xa+=step){
+    svg.appendChild(svgEl('text',{x:String(xp(xa)),y:String(H-pB+16),fill:'#5a6080','text-anchor':'middle',style:'font-family:monospace;font-size:10px'},String(xa)));
   }
+  // X axis line
+  svg.appendChild(svgEl('line',{x1:String(pL),y1:String(H-pB),x2:String(W-pR),y2:String(H-pB),stroke:'rgba(255,255,255,.1)'}));
 
   // Retirement markers
-  function addMarker(retireAge,label,color){
-    if(retireAge<xMin||retireAge>xMax)return;
-    var xx=xp(retireAge);
-    svg.appendChild(svgEl('line',{x1:String(xx),y1:String(pT),x2:String(xx),y2:String(H-pB),stroke:color,'stroke-width':'1','stroke-dasharray':'4,3',opacity:'0.7'}));
-    svg.appendChild(svgEl('text',{x:String(xx+3),y:String(pT+12),fill:color,style:'font-size:10px;font-weight:bold'},label));
+  function addMarker(age,label,col){
+    if(age<xMin||age>xMax)return;
+    var xx=xp(age);
+    svg.appendChild(svgEl('line',{x1:String(xx),y1:String(pT),x2:String(xx),y2:String(H-pB),
+      stroke:col,'stroke-width':'1','stroke-dasharray':'4,3',opacity:'0.65'}));
+    svg.appendChild(svgEl('text',{x:String(xx+3),y:String(pT+11),fill:col,style:'font-size:10px;font-weight:bold'},label));
   }
   addMarker(state.robRetireAge,'Rob '+state.robRetireAge,'#6c8ef0');
   if(state.tinaRetireAge!==state.robRetireAge)addMarker(state.tinaRetireAge,'Tina '+state.tinaRetireAge,'#a06cf0');
 
-  // Lines – main scenario
+  // Balance lines
   svg.appendChild(svgEl('path',{d:mkPath(rows,'robClose'),fill:'none',stroke:'#6c8ef0','stroke-width':'2'}));
   svg.appendChild(svgEl('path',{d:mkPath(rows,'tinaClose'),fill:'none',stroke:'#a06cf0','stroke-width':'2'}));
   svg.appendChild(svgEl('path',{d:mkPath(rows,'combinedClose'),fill:'none',stroke:'#5dd87a','stroke-width':'2.5'}));
+  if(rowsB){svg.appendChild(svgEl('path',{d:mkPath(rowsB,'combinedClose'),fill:'none',stroke:'#f0b96c','stroke-width':'2','stroke-dasharray':'6,3'}));}
 
-  // Lines – scenario B (dashed)
-  if(rowsB){
-    svg.appendChild(svgEl('path',{d:mkPath(rowsB,'combinedClose'),fill:'none',stroke:'#f0b96c','stroke-width':'2','stroke-dasharray':'6,3'}));
-  }
-
-  // Legend
-  var legendItems=[
-    {label:'Rob',col:'#6c8ef0'},{label:'Tina',col:'#a06cf0'},{label:'Combined A',col:'#5dd87a'}
-  ];
-  if(rowsB)legendItems.push({label:'Combined B',col:'#f0b96c',dash:true});
-  legendItems.forEach(function(it,j){
-    var lx=pL+j*130,ly=H-6;
-    svg.appendChild(svgEl('rect',{x:String(lx),y:String(ly-9),width:'10',height:'10',fill:it.col}));
-    svg.appendChild(svgEl('text',{x:String(lx+14),y:String(ly),fill:'#c0c5d8',style:'font-size:11px;font-weight:800'},it.label));
+  // Lump sum markers on combined line
+  rows.forEach(function(r){
+    if(!r.lsItems||r.lsItems.length===0)return;
+    var cx=xp(r.age),cy=yp(r.combinedClose);
+    var netAmt=r.lsRob+r.lsTina;
+    var col=netAmt>=0?'#5dd87a':'#f06c6c';
+    // Diamond shape
+    var d=6;
+    var pts=(cx)+','+(cy-d)+' '+(cx+d)+','+(cy)+' '+(cx)+','+(cy+d)+' '+(cx-d)+','+(cy);
+    svg.appendChild(svgEl('polygon',{points:pts,fill:col,opacity:'0.9'}));
+    // Short label above
+    var lbl=r.lsItems.map(function(ls){return ls.label;}).join(', ');
+    svg.appendChild(svgEl('text',{x:String(cx),y:String(cy-d-4),fill:col,'text-anchor':'middle',
+      style:'font-size:9px;font-weight:bold'},lbl.length>18?lbl.slice(0,17)+'…':lbl));
   });
 
-  // Tooltip crosshair
-  var cursor=svgEl('line',{x1:'0',y1:String(pT),x2:'0',y2:String(H-pB),stroke:'rgba(255,255,255,.25)','stroke-width':'1',display:'none'});
-  svg.appendChild(cursor);
+  // Legend
+  var legItems=[{l:'Rob',c:'#6c8ef0'},{l:'Tina',c:'#a06cf0'},{l:'Combined A',c:'#5dd87a'}];
+  if(rowsB)legItems.push({l:'Combined B',c:'#f0b96c'});
+  legItems.forEach(function(it,j){
+    var lx=pL+j*120,ly=H-4;
+    svg.appendChild(svgEl('rect',{x:String(lx),y:String(ly-9),width:'10',height:'10',fill:it.c}));
+    svg.appendChild(svgEl('text',{x:String(lx+14),y:String(ly),fill:'#c0c5d8',style:'font-size:11px;font-weight:800'},it.l));
+  });
+  // Lump sum legend item
+  if(state.lumpSums.length>0){
+    var lx2=pL+legItems.length*120,ly2=H-4;
+    var pts2=(lx2+5)+','+(ly2-9)+' '+(lx2+10)+','+(ly2-4)+' '+(lx2+5)+','+(ly2)+' '+(lx2)+','+(ly2-4);
+    svg.appendChild(svgEl('polygon',{points:pts2,fill:'#5dd87a'}));
+    svg.appendChild(svgEl('text',{x:String(lx2+14),y:String(ly2),fill:'#c0c5d8',style:'font-size:11px;font-weight:800'},'Event'));
+  }
 
+  // Crosshair + tooltip
+  var cursor=svgEl('line',{x1:'0',y1:String(pT),x2:'0',y2:String(H-pB),stroke:'rgba(255,255,255,.2)','stroke-width':'1',display:'none'});
+  svg.appendChild(cursor);
   var tip=document.getElementById('chart-tooltip');
+
   svg.addEventListener('mousemove',function(e){
     var rect=svg.getBoundingClientRect();
-    var mx=e.clientX-rect.left;
-    var svgX=mx/rect.width*W;
+    var svgX=(e.clientX-rect.left)/rect.width*W;
     var ageF=xMin+((svgX-pL)/(W-pL-pR))*(xMax-xMin);
     var age=Math.round(ageF);
     if(age<xMin||age>xMax){tip.style.display='none';cursor.setAttribute('display','none');return;}
     var row=rows.filter(function(r){return r.age===age;})[0];
     if(!row){tip.style.display='none';cursor.setAttribute('display','none');return;}
     cursor.setAttribute('x1',String(xp(age)));cursor.setAttribute('x2',String(xp(age)));cursor.setAttribute('display','');
-    var html='<div style="font-weight:900;margin-bottom:6px;color:#e8eaf0">Age '+age+'</div>';
-    html+='<div style="color:#6c8ef0">Rob: '+fmt(row.robClose)+'</div>';
-    html+='<div style="color:#a06cf0">Tina: '+fmt(row.tinaClose)+'</div>';
-    html+='<div style="color:#5dd87a;font-weight:700">Combined: '+fmt(row.combinedClose)+'</div>';
-    if(row.grossSpend)html+='<div style="color:#f0b96c;margin-top:4px">Spend: '+fmt(row.grossSpend)+'</div>';
-    if(row.pension)html+='<div style="color:#f0b96c">Pension: '+fmt(row.pension)+'</div>';
-    if(rowsB){var rb=rowsB.filter(function(r){return r.age===age;})[0];if(rb)html+='<div style="color:#f0b96c;margin-top:4px">B Combined: '+fmt(rb.combinedClose)+'</div>';}
-    tip.innerHTML=html;
-    tip.style.display='block';
-    tip.style.left=(e.clientX+14)+'px';
-    tip.style.top=(e.clientY-20)+'px';
+    var h='<div style="font-weight:900;margin-bottom:6px;color:#e8eaf0">Age '+age+(row.phase==='ACTUAL'?' <span style="font-size:10px;color:#5dd87a">ACTUAL</span>':'')+'</div>';
+    h+='<div style="color:#6c8ef0">Rob: '+fmt(row.robClose)+'</div>';
+    h+='<div style="color:#a06cf0">Tina: '+fmt(row.tinaClose)+'</div>';
+    h+='<div style="color:#5dd87a;font-weight:700">Combined: '+fmt(row.combinedClose)+'</div>';
+    if(row.grossSpend)h+='<div style="color:#f0b96c;margin-top:4px">Spend: '+fmt(row.grossSpend)+'</div>';
+    if(row.pension)h+='<div style="color:#f0b96c">Pension: '+fmt(row.pension)+'</div>';
+    if(row.lsItems&&row.lsItems.length>0){
+      h+='<div style="margin-top:4px;border-top:1px solid #252a3a;padding-top:4px">';
+      row.lsItems.forEach(function(ls){
+        var sign=ls.type==='outflow'?'-':'+';
+        var col=ls.type==='outflow'?'#f06c6c':'#5dd87a';
+        h+='<div style="color:'+col+'">'+ls.label+': '+sign+fmt(ls.amount)+'</div>';
+      });
+      h+='</div>';
+    }
+    if(rowsB){var rb=rowsB.filter(function(r){return r.age===age;})[0];if(rb)h+='<div style="color:#f0b96c;margin-top:4px">B Combined: '+fmt(rb.combinedClose)+'</div>';}
+    tip.innerHTML=h;tip.style.display='block';
+    tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-20)+'px';
   });
   svg.addEventListener('mouseleave',function(){tip.style.display='none';cursor.setAttribute('display','none');});
   return svg;
 }
 
-// ── Adviser narrative ────────────────────────────────────────────────────────
-function generateNarrative(rows){
-  var earliestRetire=Math.min(state.robRetireAge,state.tinaRetireAge);
-  var atRetire=rows.filter(function(r){return r.age===earliestRetire;})[0]||rows[0];
-  var at67=rows.filter(function(r){return r.age===67;})[0];
-  var at90=rows.filter(function(r){return r.age===90;})[0]||rows[rows.length-1];
-  var exhausted=rows.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
-  var totalOther=otherAssetsTotal();
+// ─── Adviser narrative ─────────────────────────────────────────────────────
+function narrative(rows){
+  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var aR=rows.filter(function(r){return r.age===er;})[0]||rows[0];
+  var a67=rows.filter(function(r){return r.age===67;})[0];
+  var a90=rows.filter(function(r){return r.age===90;})[0]||rows[rows.length-1];
+  var exh=rows.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
+  var tot=otherTotal();
+  var oi=rows.filter(function(r){return r.age===state.otherIncomeStartAge;})[0];
+  var ls=state.lumpSums;
   var lines=[];
-  lines.push('<strong>Retirement Outlook — V7 Summary</strong>');
-  lines.push('');
-  lines.push('Rob retires at <strong>age '+state.robRetireAge+'</strong> and Tina at <strong>age '+state.tinaRetireAge+'</strong>, with a combined superannuation balance of <strong>'+fmt(atRetire.combinedClose)+'</strong> at earliest retirement (Rob '+fmt(atRetire.robClose)+' | Tina '+fmt(atRetire.tinaClose)+').');
-  lines.push('');
-  lines.push('Retirement spending is phased across three periods from age '+earliestRetire+': <strong>Golden years</strong> ('+fmt(state.spendGolden)+'/yr), <strong>Silver years</strong> ('+fmt(state.spendSilver)+'/yr), and <strong>Legacy years</strong> ('+fmt(state.spendLegacy)+'/yr). The gross drawdown target is met first from other-asset income, then Age Pension, with the remainder drawn from super.');
-  lines.push('');
-  if(totalOther>0){
-    var oi60=rows.filter(function(r){return r.age===60;})[0];
-    lines.push('Other assets total <strong>'+fmt(totalOther)+'</strong>, generating an estimated <strong>'+fmt(oi60?oi60.otherIncome:0)+'</strong> per year from age '+state.otherIncomeStartAge+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI-indexed at '+fmtPct(state.otherAssetsCpi)+' p.a.).');
-    lines.push('');
+  lines.push('<strong>Retirement Outlook — V8 Summary</strong><br><br>');
+  lines.push('Rob retires at <strong>age '+state.robRetireAge+'</strong> and Tina at <strong>age '+state.tinaRetireAge+'</strong>, with a combined super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at earliest retirement (Rob '+fmt(aR.robClose)+' | Tina '+fmt(aR.tinaClose)+').<br><br>');
+  lines.push('Spending is phased: <strong>Golden '+fmt(state.spendGolden)+'</strong> / <strong>Silver '+fmt(state.spendSilver)+'</strong> / <strong>Legacy '+fmt(state.spendLegacy)+'</strong> per year gross. Drawdown is met first from other-asset income, then Age Pension, with the remainder from super.<br><br>');
+  if(tot>0&&oi){lines.push('Other assets total <strong>'+fmt(tot)+'</strong>, generating <strong>'+fmt(oi.otherIncome)+'</strong>/yr from age '+state.otherIncomeStartAge+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI '+fmtPct(state.otherAssetsCpi)+' p.a.).<br><br>');}
+  if(state.usePension&&a67){
+    if(a67.pension>0){lines.push('Age Pension estimated at <strong>'+fmt(a67.pension)+'</strong>/yr from age 67.<br><br>');}
+    else{lines.push('No Age Pension payable at age 67 — assets exceed threshold. May improve as balances drawdown.<br><br>');}
   }
-  if(state.usePension&&at67){
-    if(at67.pension>0){
-      lines.push('The Age Pension is estimated to contribute <strong>'+fmt(at67.pension)+'</strong> per year from age 67, reducing required super drawdown materially.');
-    } else {
-      lines.push('At age 67, combined assets exceed the pension assets threshold — <strong>no Age Pension is payable</strong> under current settings. This may change as balances are drawn down.');
-    }
-    lines.push('');
+  if(ls&&ls.length>0){
+    lines.push('<strong>Lump sum events modelled:</strong><br>');
+    ls.forEach(function(e){
+      var sign=e.type==='outflow'?'-':'+';
+      lines.push('• Age '+e.age+': <strong>'+e.label+'</strong> '+sign+fmt(e.amount)+' ('+e.who+(e.downsizer?', downsizer':'')+')<br>');
+    });
+    lines.push('<br>');
   }
-  if(exhausted){
-    lines.push('⚠️ <strong>Funds are projected to be exhausted at age '+exhausted.age+'.</strong> Consider reducing spend, increasing investment returns, or retiring later.');
-  } else {
-    lines.push('✅ Funds <strong>last through age '+state.endAge+'</strong> with a combined balance of <strong>'+fmt(at90.combinedClose)+'</strong> (Rob '+fmt(at90.robClose)+' | Tina '+fmt(at90.tinaClose)+').');
-  }
-  lines.push('');
-  lines.push('<em>Assumptions: '+fmtPct(state.robWorkReturn)+' working return (Rob), '+fmtPct(state.tinaWorkReturn)+' (Tina), '+fmtPct(state.retireReturn)+' retirement return. Concessional contributions $'+state.caps.at54.toLocaleString()+' at age 54, $'+state.caps.after54.toLocaleString()+' thereafter. Contributions tax '+fmtPct(state.contribTax)+'. All figures nominal.'+(state.showInflationAdj?' Balance figures marked * are in today\'s dollars.':'')+'</em>');
-  return lines.join('<br>');
+  if(exh){lines.push('⚠️ <strong>Funds exhausted at age '+exh.age+'.</strong> Reduce spending, increase returns, or add inflows.<br><br>');}
+  else{lines.push('✅ <strong>Funds last to age '+state.endAge+'</strong> with <strong>'+fmt(a90.combinedClose)+'</strong> remaining (Rob '+fmt(a90.robClose)+' | Tina '+fmt(a90.tinaClose)+').<br><br>');}
+  lines.push('<em>Returns: Rob '+fmtPct(state.robWorkReturn)+' / Tina '+fmtPct(state.tinaWorkReturn)+' (work), '+fmtPct(state.retireReturn)+' (retirement). CC: $'+state.caps.at54.toLocaleString()+' (age 54), $'+state.caps.after54.toLocaleString()+' (55+). Tax '+fmtPct(state.contribTax)+'. All figures nominal.</em>');
+  return lines.join('');
 }
 
-// ── Root mount ───────────────────────────────────────────────────────────────
+// ─── Mount ─────────────────────────────────────────────────────────────────
 var root=document.getElementById('root');
 root.innerHTML='';
 root.style.cssText='min-height:100vh;background:#0f1117;color:#e8eaf0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
 
-var header=el('div',{style:{padding:'14px 20px',background:'#161923',borderBottom:'1px solid #252a3a',display:'flex',justifyContent:'space-between',alignItems:'center'}},[
+var header=el('div',{style:{padding:'12px 20px',background:'#161923',borderBottom:'1px solid #252a3a',display:'flex',justifyContent:'space-between',alignItems:'center'}},[
   el('div',{},[
-    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V7 | SUPER CALCULATOR'),
-    el('div',{style:{fontSize:'22px',fontWeight:'900',marginTop:'2px'}},'Superannuation Calculator'),
-    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'2px'}},'Rob & Tina | Phased spend · Scenario compare · Pension model')
+    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V8 | SUPER CALCULATOR'),
+    el('div',{style:{fontSize:'20px',fontWeight:'900',marginTop:'2px'}},'Superannuation Calculator'),
+    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'Rob & Tina · Phased spend · Lump sums · Scenario B · Pension model')
   ]),
-  el('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},[
-    el('button',{style:{padding:'6px 12px',borderRadius:'8px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'12px'},onClick:function(){if(confirm('Reset all settings to defaults?')){resetState();}}},  '↺ Reset'),
-    el('button',{style:{padding:'6px 12px',borderRadius:'8px',border:'1px solid rgba(93,216,122,.4)',background:'rgba(93,216,122,.07)',color:'#5dd87a',cursor:'pointer',fontSize:'12px'},onClick:function(){saveState();var b=this;b.textContent='✓ Saved';setTimeout(function(){b.textContent='💾 Save';},1200);}}, '💾 Save')
+  el('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}},[
+    el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},onClick:function(){window.print();}}, '🖨 Print'),
+    el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},onClick:function(){if(confirm('Reset all settings to defaults?'))resetState();}}, '↺ Reset'),
+    el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid rgba(93,216,122,.4)',background:'rgba(93,216,122,.07)',color:'#5dd87a',cursor:'pointer',fontSize:'11px'},onClick:function(){saveState();var b=this;b.textContent='✓ Saved';setTimeout(function(){b.textContent='💾 Save';},1200);}}, '💾 Save')
   ])
 ]);
 
-var tabsBar=el('div',{style:{display:'flex',gap:'8px',padding:'10px 20px',background:'#161923',borderBottom:'1px solid #252a3a'}});
+var tabsBar=el('div',{class:'no-print',style:{display:'flex',gap:'8px',padding:'8px 20px',background:'#161923',borderBottom:'1px solid #252a3a'}});
 var mainGrid=el('div',{class:'main-grid',style:{display:'grid',gridTemplateColumns:'minmax(300px,360px) 1fr',gap:'16px',padding:'16px 20px',alignItems:'start'}});
-var leftCol=el('div',{class:'left-col',style:{position:'sticky',top:'10px'}});
+var leftCol=el('div',{class:'left-col no-print',style:{position:'sticky',top:'10px'}});
 var rightCol=el('div',{});
 
-root.appendChild(header);
-root.appendChild(tabsBar);
-root.appendChild(mainGrid);
-mainGrid.appendChild(leftCol);
-mainGrid.appendChild(rightCol);
+root.appendChild(header);root.appendChild(tabsBar);root.appendChild(mainGrid);
+mainGrid.appendChild(leftCol);mainGrid.appendChild(rightCol);
 
 function tabBtn(id,label){
-  var active=state.tab===id;
-  return el('button',{style:{padding:'7px 14px',borderRadius:'8px',cursor:'pointer',border:'1px solid #252a3a',background:active?'#6c8ef0':'transparent',color:active?'#fff':'#7a8099',fontWeight:'800',fontSize:'12px'},onClick:function(){state.tab=id;render();}},label);
+  var a=state.tab===id;
+  return el('button',{style:{padding:'6px 13px',borderRadius:'7px',cursor:'pointer',border:'1px solid #252a3a',
+    background:a?'#6c8ef0':'transparent',color:a?'#fff':'#7a8099',fontWeight:'800',fontSize:'12px'},
+    onClick:function(){state.tab=id;render();}},label);
 }
 
 function render(){
   saveState();
-  state.otherAssets=otherAssetsTotal();
   tabsBar.innerHTML='';
-  tabsBar.appendChild(tabBtn('super','Super'));
-  tabsBar.appendChild(tabBtn('adviser','Adviser Summary'));
-  tabsBar.appendChild(tabBtn('scenariob','Scenario B'));
+  ['super','adviser','scenariob'].forEach(function(t){
+    tabsBar.appendChild(tabBtn(t,t==='super'?'Super':t==='adviser'?'Adviser Summary':'Scenario B'));
+  });
   leftCol.innerHTML='';rightCol.innerHTML='';
 
   var rows=buildTimeline(state);
-  var rowsB=state.showScenarioB?buildScenarioBTimeline():null;
-  var earliestRetire=Math.min(state.robRetireAge,state.tinaRetireAge);
-  var atRetire=rows.filter(function(r){return r.age===earliestRetire;})[0]||rows[0];
-  var at90=rows.filter(function(r){return r.age===90;})[0]||rows[rows.length-1];
-  var at60=rows.filter(function(r){return r.age===60;})[0]||atRetire;
-  var exhausted=rows.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
-  var totalOther=otherAssetsTotal();
+  var rowsB=state.showScenarioB?buildTimelineB():null;
+  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var aRet=rows.filter(function(r){return r.age===er;})[0]||rows[0];
+  var a67=rows.filter(function(r){return r.age===67;})[0];
+  var a90=rows.filter(function(r){return r.age===90;})[0]||rows[rows.length-1];
+  var exh=rows.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
+  var tot=otherTotal();
 
-  // ── LEFT: Controls ────────────────────────────────────────────────────────
+  // ── LEFT CONTROLS ───────────────────────────────────────────────────────
   var ctrl=el('div',{});
+  ctrl.appendChild(tog(state.showActuals?'Actuals ON (to FY2025)':'Actuals OFF',state.showActuals,function(){state.showActuals=!state.showActuals;render();}));
+  ctrl.appendChild(tog(state.showInflationAdj?'Real $ ON ('+fmtPct(state.inflationRate)+' CPI) ★':'Nominal $ (click for real)',state.showInflationAdj,function(){state.showInflationAdj=!state.showInflationAdj;render();}));
+  ctrl.appendChild(tog(state.showScenarioB?'Scenario B: ON (amber dashed)':'Scenario B: OFF',state.showScenarioB,function(){state.showScenarioB=!state.showScenarioB;render();}));
 
-  // Actuals toggle
-  ctrl.appendChild(toggle(state.showActuals?'Actuals ON (to FY2025)':'Actuals OFF',state.showActuals,function(){state.showActuals=!state.showActuals;render();}));
-  ctrl.appendChild(toggle(state.showInflationAdj?'Real $ ON ('+fmtPct(state.inflationRate)+' CPI) *':'Nominal $ (toggle for real)',state.showInflationAdj,function(){state.showInflationAdj=!state.showInflationAdj;render();}));
-  ctrl.appendChild(toggle(state.showScenarioB?'Scenario B: ON':'Scenario B: OFF',state.showScenarioB,function(){state.showScenarioB=!state.showScenarioB;render();}));
-
-  // Returns
-  ctrl.appendChild(collapsibleSection('returns','Returns',function(){
+  ctrl.appendChild(collSec('returns','Returns',function(){
     var d=el('div',{});
-    d.appendChild(slider('Rob work return',3,15,0.05,state.robWorkReturn*100,fmtPct(state.robWorkReturn),function(v){state.robWorkReturn=v/100;render();}));
-    d.appendChild(slider('Tina work return',3,15,0.05,state.tinaWorkReturn*100,fmtPct(state.tinaWorkReturn),function(v){state.tinaWorkReturn=v/100;render();}));
-    d.appendChild(slider('Retirement return',0,12,0.05,state.retireReturn*100,fmtPct(state.retireReturn),function(v){state.retireReturn=v/100;render();}));
-    if(state.showInflationAdj)d.appendChild(slider('Inflation rate (CPI)',1,8,0.1,state.inflationRate*100,fmtPct(state.inflationRate),function(v){state.inflationRate=v/100;render();}));
+    d.appendChild(sld('Rob work return',3,15,0.05,state.robWorkReturn*100,fmtPct(state.robWorkReturn),function(v){state.robWorkReturn=v/100;render();}));
+    d.appendChild(sld('Tina work return',3,15,0.05,state.tinaWorkReturn*100,fmtPct(state.tinaWorkReturn),function(v){state.tinaWorkReturn=v/100;render();}));
+    d.appendChild(sld('Retirement return',0,12,0.05,state.retireReturn*100,fmtPct(state.retireReturn),function(v){state.retireReturn=v/100;render();}));
+    if(state.showInflationAdj)d.appendChild(sld('CPI rate',1,8,0.1,state.inflationRate*100,fmtPct(state.inflationRate),function(v){state.inflationRate=v/100;render();}));
     return d;
   }));
 
-  // Retirement ages
-  ctrl.appendChild(collapsibleSection('retirement','Retirement Ages',function(){
+  ctrl.appendChild(collSec('retirement','Retirement Ages',function(){
     var d=el('div',{});
-    d.appendChild(slider('Rob retires at',55,70,1,state.robRetireAge,String(state.robRetireAge),function(v){state.robRetireAge=v;render();}));
-    d.appendChild(slider('Tina retires at',55,70,1,state.tinaRetireAge,String(state.tinaRetireAge),function(v){state.tinaRetireAge=v;render();}));
-    d.appendChild(slider('End age (horizon)',70,100,1,state.endAge,String(state.endAge),function(v){state.endAge=v;render();}));
+    d.appendChild(sld('Rob retires at',55,70,1,state.robRetireAge,String(state.robRetireAge),function(v){state.robRetireAge=v;render();}));
+    d.appendChild(sld('Tina retires at',55,70,1,state.tinaRetireAge,String(state.tinaRetireAge),function(v){state.tinaRetireAge=v;render();}));
+    d.appendChild(sld('Horizon (end age)',70,100,1,state.endAge,String(state.endAge),function(v){state.endAge=v;render();}));
     return d;
   }));
 
-  // Spending
-  ctrl.appendChild(collapsibleSection('spending','Spending (Phased)',function(){
+  ctrl.appendChild(collSec('spending','Spending (Phased)',function(){
     var d=el('div',{});
-    d.appendChild(el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}},[
+    d.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'7px'}},[
       segBtn('Golden',state.spendPhase==='Golden',function(){state.spendPhase='Golden';render();}),
       segBtn('Silver',state.spendPhase==='Silver',function(){state.spendPhase='Silver';render();}),
       segBtn('Legacy',state.spendPhase==='Legacy',function(){state.spendPhase='Legacy';render();})
     ]));
     var cur=state.spendPhase==='Golden'?state.spendGolden:state.spendPhase==='Silver'?state.spendSilver:state.spendLegacy;
     function setSpend(v){if(state.spendPhase==='Golden')state.spendGolden=v;else if(state.spendPhase==='Silver')state.spendSilver=v;else state.spendLegacy=v;render();}
-    d.appendChild(slider(state.spendPhase+' spend',state.spendMin,state.spendMax,5000,cur,fmt(cur),setSpend));
-    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'4px'}},'G='+fmt(state.spendGolden)+' | S='+fmt(state.spendSilver)+' | L='+fmt(state.spendLegacy)));
-    d.appendChild(slider('Split when both retired (Rob %)',0,100,5,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
+    d.appendChild(sld(state.spendPhase+' spend',state.spendMin,state.spendMax,5000,cur,fmt(cur),setSpend));
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},'G='+fmt(state.spendGolden)+' | S='+fmt(state.spendSilver)+' | L='+fmt(state.spendLegacy)));
+    d.appendChild(sld('Split when both retired (Rob %)',0,100,5,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
     return d;
   }));
 
-  // Other assets
-  ctrl.appendChild(collapsibleSection('assets','Other Assets',function(){
+  ctrl.appendChild(collSec('assets','Other Assets',function(){
     var d=el('div',{});
-    d.appendChild(el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}},[
+    d.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'7px'}},[
       segBtn('Real Estate',state.otherAssetsBucket==='realestate',function(){state.otherAssetsBucket='realestate';render();}),
       segBtn('Shares',state.otherAssetsBucket==='shares',function(){state.otherAssetsBucket='shares';render();}),
       segBtn('Other',state.otherAssetsBucket==='other',function(){state.otherAssetsBucket='other';render();})
     ]));
-    d.appendChild(slider('Principal',0,2000000,25000,state.otherAssetsBuckets[state.otherAssetsBucket]||0,fmt(state.otherAssetsBuckets[state.otherAssetsBucket]||0),function(v){state.otherAssetsBuckets[state.otherAssetsBucket]=v;state.otherAssets=otherAssetsTotal();render();}));
-    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'8px'}},'Total: '+fmt(totalOther)));
-    d.appendChild(el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}},[
+    var bv=state.otherAssetsBuckets[state.otherAssetsBucket]||0;
+    d.appendChild(sld('Principal',0,2000000,25000,bv,fmt(bv),function(v){state.otherAssetsBuckets[state.otherAssetsBucket]=v;render();}));
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'7px'}},'Total: '+fmt(tot)));
+    d.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'7px'}},[
       segBtn('Yield',state.otherAssetsRateMode==='yield',function(){state.otherAssetsRateMode='yield';render();}),
       segBtn('CPI',state.otherAssetsRateMode==='cpi',function(){state.otherAssetsRateMode='cpi';render();})
     ]));
-    var rateVal=state.otherAssetsRateMode==='yield'?state.otherAssetsReturn:state.otherAssetsCpi;
-    d.appendChild(slider(state.otherAssetsRateMode==='yield'?'Yield %':'CPI %',0,12,0.05,rateVal*100,(rateVal*100).toFixed(2)+'%',function(v){if(state.otherAssetsRateMode==='yield')state.otherAssetsReturn=v/100;else state.otherAssetsCpi=v/100;render();}));
+    var rv=state.otherAssetsRateMode==='yield'?state.otherAssetsReturn:state.otherAssetsCpi;
+    d.appendChild(sld(state.otherAssetsRateMode==='yield'?'Yield %':'CPI %',0,12,0.05,rv*100,(rv*100).toFixed(2)+'%',function(v){if(state.otherAssetsRateMode==='yield')state.otherAssetsReturn=v/100;else state.otherAssetsCpi=v/100;render();}));
     return d;
   }));
 
-  // Pension settings
-  ctrl.appendChild(collapsibleSection('pension','Age Pension',function(){
+  ctrl.appendChild(collSec('lumpsums','Lump Sum Events'+(state.lumpSums.length>0?' ('+state.lumpSums.length+')':''),lumpSumEditor));
+
+  ctrl.appendChild(collSec('pension','Age Pension',function(){
     var d=el('div',{});
-    d.appendChild(toggle(state.usePension?'Age Pension: ON':'Age Pension: OFF',state.usePension,function(){state.usePension=!state.usePension;render();}));
-    d.appendChild(toggle(state.homeowner?'Homeowner: YES':'Homeowner: NO',state.homeowner,function(){state.homeowner=!state.homeowner;render();}));
-    d.appendChild(numInput('Full pension ($/yr)',state.fullPension,function(v){state.fullPension=v;render();},{step:100,min:0}));
-    d.appendChild(numInput('Asset threshold ($)',state.assetThreshold,function(v){state.assetThreshold=v;render();},{step:1000,min:0}));
-    d.appendChild(slider('Taper ($/$ over threshold)',0.05,0.15,0.001,state.assetTaperPerDollar,(state.assetTaperPerDollar*100).toFixed(1)+'¢',function(v){state.assetTaperPerDollar=v;render();}));
-    d.appendChild(slider('Income free area',5000,20000,500,state.incomeFreeArea,fmt(state.incomeFreeArea),function(v){state.incomeFreeArea=v;render();}));
+    d.appendChild(tog(state.usePension?'Age Pension: ON':'Age Pension: OFF',state.usePension,function(){state.usePension=!state.usePension;render();}));
+    d.appendChild(tog(state.homeowner?'Homeowner: YES':'Homeowner: NO',state.homeowner,function(){state.homeowner=!state.homeowner;render();}));
+    d.appendChild(numI('Full pension ($/yr)',state.fullPension,function(v){state.fullPension=v;render();},{step:100,min:0}));
+    d.appendChild(numI('Asset threshold ($)',state.assetThreshold,function(v){state.assetThreshold=v;render();},{step:1000,min:0}));
+    d.appendChild(sld('Taper rate (¢/$ over threshold)',0.05,0.15,0.001,state.assetTaperPerDollar,(state.assetTaperPerDollar*100).toFixed(1)+'¢',function(v){state.assetTaperPerDollar=v;render();}));
+    d.appendChild(sld('Income free area',5000,20000,500,state.incomeFreeArea,fmt(state.incomeFreeArea),function(v){state.incomeFreeArea=v;render();}));
     return d;
   }));
 
-  // Concessional caps
-  ctrl.appendChild(collapsibleSection('advanced','Concessional Caps',function(){
+  ctrl.appendChild(collSec('advanced','Concessional Caps',function(){
     var d=el('div',{});
-    d.appendChild(numInput('Age 54 cap ($)',state.caps.at54,function(v){state.caps.at54=v;render();},{step:500,min:0}));
-    d.appendChild(numInput('Age 55+ cap ($)',state.caps.after54,function(v){state.caps.after54=v;render();},{step:500,min:0}));
-    d.appendChild(slider('Contributions tax',0,0.30,0.01,state.contribTax,fmtPct(state.contribTax),function(v){state.contribTax=v;render();}));
+    d.appendChild(numI('Age 54 cap ($)',state.caps.at54,function(v){state.caps.at54=v;render();},{step:500,min:0}));
+    d.appendChild(numI('Age 55+ cap ($)',state.caps.after54,function(v){state.caps.after54=v;render();},{step:500,min:0}));
+    d.appendChild(sld('Contributions tax',0,0.30,0.01,state.contribTax,fmtPct(state.contribTax),function(v){state.contribTax=v;render();}));
     return d;
   }));
 
   leftCol.appendChild(panel('Controls',ctrl));
 
-  // ── RIGHT ─────────────────────────────────────────────────────────────────
+  // ── RIGHT ───────────────────────────────────────────────────────────────
   if(state.tab==='super'){
-    var cards=el('div',{class:'cards-grid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:'12px'}});
-    cards.appendChild(card('Combined at retirement',fmt(atRetire.combinedClose),'Age '+earliestRetire+' | Rob '+fmt(atRetire.robClose),'#5dd87a'));
-    cards.appendChild(card('Other income @ 60',fmt(at60.otherIncome||0),fmt(totalOther)+' × '+fmtPct(state.otherAssetsReturn),'#6c8ef0'));
-    cards.appendChild(card('Age Pension (age 67)',atRetire.pension?fmt(atRetire.pension):'—',state.usePension?'Applied from 67':'Disabled',atRetire.pension>0?'#f0b96c':'#5a6080'));
-    cards.appendChild(card(exhausted?'Exhausted at age':'Still running at',exhausted?String(exhausted.age):String(state.endAge),exhausted?'Household runs out':'Horizon intact',exhausted?'#f06c6c':'#5dd87a'));
-    cards.appendChild(card('Balance at 90',fmt(at90.combinedClose),'Rob '+fmt(at90.robClose)+' | Tina '+fmt(at90.tinaClose),at90.combinedClose>0?'#a06cf0':'#f06c6c'));
-
+    // Key cards — pension card now uses age-67 row
+    var p67=a67?a67.pension:0;
+    var cards=el('div',{class:'cards-grid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:'12px'}});
+    cards.appendChild(card('Combined at retirement',fmt(aRet.combinedClose),'Age '+er+' · Rob '+fmt(aRet.robClose),'#5dd87a'));
+    cards.appendChild(card('Other income @ '+state.otherIncomeStartAge,fmt(aRet.otherIncome||0),fmt(tot)+' × '+fmtPct(state.otherAssetsReturn),'#6c8ef0'));
+    cards.appendChild(card('Age Pension (at 67)',p67?fmt(p67):'—',state.usePension?(p67?'Reduces drawdown':'Below threshold'):'Disabled',p67?'#f0b96c':'#5a6080'));
+    cards.appendChild(card(exh?'Exhausted at age':'Still running at',exh?String(exh.age):String(state.endAge),exh?'Household runs out':'Horizon intact',exh?'#f06c6c':'#5dd87a'));
+    cards.appendChild(card('Balance at 90',fmt(a90.combinedClose),'Rob '+fmt(a90.robClose)+' · Tina '+fmt(a90.tinaClose),a90.combinedClose>0?'#a06cf0':'#f06c6c'));
+    if(state.lumpSums.length>0){
+      var totalIn=state.lumpSums.filter(function(ls){return ls.type!=='outflow';}).reduce(function(s,ls){return s+ls.amount;},0);
+      var totalOut=state.lumpSums.filter(function(ls){return ls.type==='outflow';}).reduce(function(s,ls){return s+ls.amount;},0);
+      cards.appendChild(card('Lump sum events',String(state.lumpSums.length)+' event'+(state.lumpSums.length>1?'s':''),'+'+fmt(totalIn)+' in · '+fmt(totalOut)+' out','#f0b96c'));
+    }
     rightCol.appendChild(panel('Key Results',cards));
-    rightCol.appendChild(panel('Balance Over Time'+(state.showInflationAdj?' (★ real $)':''),balanceChart(rows,rowsB)));
+    rightCol.appendChild(panel('Balance Over Time',balanceChart(rows,rowsB)));
 
-    // Table
-    var slice=rows.slice(0,50);
-    var baseYear=2026-(state.robRetireAge-state.robRetireAge);
-    var refAge=48; // actuals start age
-    var tableRows=slice.map(function(r){
-      // Actuals are historical — always show nominal. Only deflate forecast rows.
-      var isActual=r.phase==='ACTUAL';
-      var yrs=(!isActual&&state.showInflationAdj)?r.age-54:0;
-      function fmtCell(n){return isActual?fmt(n):fmtReal(n,yrs);}
-      return[
-        String(r.age),
-        isActual?'Actual':'Forecast',
-        r.stage||'—',
-        fmtCell(r.robClose),
-        fmtCell(r.tinaClose),
-        fmtCell(r.combinedClose),
-        r.grossSpend?(isActual?fmt(r.grossSpend):fmtReal(r.grossSpend,yrs)):'—',
+    // Timeline table
+    var hasLS=rows.some(function(r){return r.lsItems&&r.lsItems.length>0;});
+    var dispRows=state.showAllRows?rows:rows.slice(0,50);
+    var tblHeaders=['Age','Phase','Stage','Rob Close','Tina Close','Combined','Gross Spend','Other Inc','Pension'];
+    if(hasLS)tblHeaders.push('Events');
+    var tblRows=dispRows.map(function(r){
+      var isA=r.phase==='ACTUAL';
+      var yrs=(!isA&&state.showInflationAdj)?(r.age-54):0;
+      function fc(n){return isA?fmt(n):fmtReal(n,yrs);}
+      var cells=[
+        String(r.age),isA?'Actual':'Forecast',r.stage||'—',
+        fc(r.robClose),fc(r.tinaClose),fc(r.combinedClose),
+        r.grossSpend?fc(r.grossSpend):'—',
         r.otherIncome?fmt(r.otherIncome):'—',
-        r.pension?fmt(r.pension):'—',
+        r.pension?fmt(r.pension):'—'
       ];
+      if(hasLS){
+        var lsCell=r.lsItems&&r.lsItems.length>0
+          ?r.lsItems.map(function(ls){return (ls.type==='outflow'?'−':'+')+''+ls.label;}).join(', ')
+          :'—';
+        cells.push(lsCell);
+      }
+      return cells;
     });
-    rightCol.appendChild(panel('Timeline'+(state.showInflationAdj?' (* = today\'s $)':''),mkTable(
-      ['Age','Phase','Stage','Rob Close','Tina Close','Combined','Gross Spend','Other Income','Pension'],
-      tableRows
-    )));
+    var tblTitle='Timeline'+(state.showInflationAdj?' (★ = today\'s $)':'')+(state.showAllRows?'':' (first 50 rows)');
+    rightCol.appendChild(panel(tblTitle,el('div',{},[
+      mkTbl(tblHeaders,tblRows),
+      el('button',{style:{marginTop:'8px',padding:'5px 12px',borderRadius:'7px',border:'1px solid #252a3a',
+        background:'none',color:'#6c8ef0',cursor:'pointer',fontSize:'12px'},
+        onClick:function(){state.showAllRows=!state.showAllRows;render();}},
+        state.showAllRows?'Show less':'Show all '+rows.length+' rows')
+    ])));
 
   } else if(state.tab==='adviser'){
-    var narrative=generateNarrative(rows);
-    var narDiv=el('div',{style:{lineHeight:'1.8',fontSize:'13px',color:'#c0c5d8',background:'#0f1117',border:'1px solid #252a3a',borderRadius:'12px',padding:'20px'}});
-    narDiv.innerHTML=narrative;
+    var narDiv=el('div',{style:{lineHeight:'1.85',fontSize:'13px',color:'#c0c5d8',background:'#0f1117',border:'1px solid #252a3a',borderRadius:'12px',padding:'20px'}});
+    narDiv.innerHTML=narrative(rows);
     rightCol.appendChild(panel('Adviser Summary',narDiv));
-    // Key table for adviser
-    var advRows=[
-      ['Earliest retirement',String(earliestRetire),'Combined '+fmt(atRetire.combinedClose)],
-      ['Rob balance @ retire',fmt(atRetire.robClose),'Vision Super'],
-      ['Tina balance @ retire',fmt(atRetire.tinaClose),'Aware Super'],
-      ['Golden spend (yr '+earliestRetire+'–'+(earliestRetire+Math.ceil(HORIZON/3)-1)+')',fmt(state.spendGolden),'Gross'],
-      ['Silver spend',fmt(state.spendSilver),'Gross'],
-      ['Legacy spend',fmt(state.spendLegacy),'Gross'],
-      ['Other assets total',fmt(totalOther),'Annual income '+fmt(at60.otherIncome||0)],
-      ['Age Pension (age 67)',at60&&at60.pension?fmt(at60.pension):'TBC','Subject to assets/income tests'],
-      ['Balance at 90',fmt(at90.combinedClose),'Rob '+fmt(at90.robClose)+' | Tina '+fmt(at90.tinaClose)],
-      ['Fund exhaustion',exhausted?'Age '+exhausted.age:'Not projected','At horizon '+state.endAge],
+    var a60=rows.filter(function(r){return r.age===60;})[0];
+    var p67adv=a67?a67.pension:0;
+    var advTbl=[
+      ['Earliest retirement',String(er),'Combined '+fmt(aRet.combinedClose)],
+      ['Rob balance at retire',fmt(aRet.robClose),'Vision Super'],
+      ['Tina balance at retire',fmt(aRet.tinaClose),'Aware Super'],
+      ['Golden spend',fmt(state.spendGolden),'Gross / year'],
+      ['Silver spend',fmt(state.spendSilver),'Gross / year'],
+      ['Legacy spend',fmt(state.spendLegacy),'Gross / year'],
+      ['Other assets',fmt(tot),'Income '+fmt(a60?a60.otherIncome:0)+'/yr from age '+state.otherIncomeStartAge],
+      ['Age Pension (age 67)',p67adv?fmt(p67adv):'Below threshold','Assets & income tested'],
+      ['Balance at 90',fmt(a90.combinedClose),'Rob '+fmt(a90.robClose)+' | Tina '+fmt(a90.tinaClose)],
+      ['Fund exhaustion',exh?'Age '+exh.age:'Not projected','Horizon: age '+state.endAge]
     ];
-    rightCol.appendChild(panel('Assumptions Table',mkTable(['Item','Value','Note'],advRows)));
+    if(state.lumpSums.length>0){
+      state.lumpSums.forEach(function(ls){
+        var sign=ls.type==='outflow'?'-':'+';
+        advTbl.push(['Event: '+ls.label,'Age '+ls.age+' · '+sign+fmt(ls.amount),ls.who+(ls.downsizer?' (downsizer)':'')]);
+      });
+    }
+    rightCol.appendChild(panel('Assumptions & Events',mkTbl(['Item','Value','Note'],advTbl)));
 
-  } else if(state.tab==='scenariob'){
-    // Scenario B controls
+  } else {
+    // Scenario B tab
     var sb=state.scenarioB;
     var sbCtrl=el('div',{});
-    sbCtrl.appendChild(toggle(state.showScenarioB?'Scenario B: Shown on chart':'Scenario B: Hidden',state.showScenarioB,function(){state.showScenarioB=!state.showScenarioB;render();}));
-    sbCtrl.appendChild(el('div',{style:{fontSize:'12px',color:'#7a8099',marginBottom:'8px',marginTop:'8px'}},'Adjust Scenario B parameters independently. The amber dashed line on the chart shows Scenario B combined balance.'));
-    sbCtrl.appendChild(slider('B: Rob work return',3,15,0.05,sb.robWorkReturn*100,fmtPct(sb.robWorkReturn),function(v){sb.robWorkReturn=v/100;render();}));
-    sbCtrl.appendChild(slider('B: Tina work return',3,15,0.05,sb.tinaWorkReturn*100,fmtPct(sb.tinaWorkReturn),function(v){sb.tinaWorkReturn=v/100;render();}));
-    sbCtrl.appendChild(slider('B: Retirement return',0,12,0.05,sb.retireReturn*100,fmtPct(sb.retireReturn),function(v){sb.retireReturn=v/100;render();}));
-    sbCtrl.appendChild(slider('B: Rob retires at',55,70,1,sb.robRetireAge,String(sb.robRetireAge),function(v){sb.robRetireAge=v;render();}));
-    sbCtrl.appendChild(slider('B: Tina retires at',55,70,1,sb.tinaRetireAge,String(sb.tinaRetireAge),function(v){sb.tinaRetireAge=v;render();}));
-    sbCtrl.appendChild(slider('B: Golden spend',50000,500000,5000,sb.spendGolden,fmt(sb.spendGolden),function(v){sb.spendGolden=v;render();}));
-    sbCtrl.appendChild(slider('B: Silver spend',50000,500000,5000,sb.spendSilver,fmt(sb.spendSilver),function(v){sb.spendSilver=v;render();}));
-    sbCtrl.appendChild(slider('B: Legacy spend',50000,500000,5000,sb.spendLegacy,fmt(sb.spendLegacy),function(v){sb.spendLegacy=v;render();}));
+    sbCtrl.appendChild(tog(state.showScenarioB?'Show on chart: ON':'Show on chart: OFF',state.showScenarioB,function(){state.showScenarioB=!state.showScenarioB;render();}));
+    sbCtrl.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',margin:'6px 0 10px'}},'Scenario B uses same lump sums as A. Amber dashed line on chart.'));
+    [['B: Rob work return','robWorkReturn'],['B: Tina work return','tinaWorkReturn'],['B: Retirement return','retireReturn']].forEach(function(x){
+      sbCtrl.appendChild(sld(x[0],x[1]==='retireReturn'?0:3,15,0.05,sb[x[1]]*100,fmtPct(sb[x[1]]),function(v){sb[x[1]]=v/100;render();}));
+    });
+    sbCtrl.appendChild(sld('B: Rob retires at',55,70,1,sb.robRetireAge,String(sb.robRetireAge),function(v){sb.robRetireAge=v;render();}));
+    sbCtrl.appendChild(sld('B: Tina retires at',55,70,1,sb.tinaRetireAge,String(sb.tinaRetireAge),function(v){sb.tinaRetireAge=v;render();}));
+    sbCtrl.appendChild(sld('B: Golden spend',50000,500000,5000,sb.spendGolden,fmt(sb.spendGolden),function(v){sb.spendGolden=v;render();}));
+    sbCtrl.appendChild(sld('B: Silver spend',50000,500000,5000,sb.spendSilver,fmt(sb.spendSilver),function(v){sb.spendSilver=v;render();}));
+    sbCtrl.appendChild(sld('B: Legacy spend',50000,500000,5000,sb.spendLegacy,fmt(sb.spendLegacy),function(v){sb.spendLegacy=v;render();}));
     rightCol.appendChild(panel('Scenario B Settings',sbCtrl));
-
-    // Comparison table
     if(rowsB){
-      var earliestB=Math.min(sb.robRetireAge,sb.tinaRetireAge);
-      var atRetireB=rowsB.filter(function(r){return r.age===earliestB;})[0]||rowsB[0];
-      var at90B=rowsB.filter(function(r){return r.age===90;})[0]||rowsB[rowsB.length-1];
-      var exhaustedB=rowsB.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
-      var cmpRows=[
+      var erB=Math.min(sb.robRetireAge,sb.tinaRetireAge);
+      var aRetB=rowsB.filter(function(r){return r.age===erB;})[0]||rowsB[0];
+      var a90B=rowsB.filter(function(r){return r.age===90;})[0]||rowsB[rowsB.length-1];
+      var exhB=rowsB.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
+      var cmp=[
         ['Retire ages','Rob '+state.robRetireAge+' / Tina '+state.tinaRetireAge,'Rob '+sb.robRetireAge+' / Tina '+sb.tinaRetireAge],
-        ['Combined at retirement',fmt(atRetire.combinedClose),fmt(atRetireB.combinedClose)],
+        ['Combined at retirement',fmt(aRet.combinedClose),fmt(aRetB.combinedClose)],
         ['Golden spend',fmt(state.spendGolden),fmt(sb.spendGolden)],
         ['Silver spend',fmt(state.spendSilver),fmt(sb.spendSilver)],
         ['Legacy spend',fmt(state.spendLegacy),fmt(sb.spendLegacy)],
-        ['Balance at 90',fmt(at90.combinedClose),fmt(at90B.combinedClose)],
-        ['Exhaustion',exhausted?'Age '+exhausted.age:'None',exhaustedB?'Age '+exhaustedB.age:'None'],
+        ['Balance at 90',fmt(a90.combinedClose),fmt(a90B.combinedClose)],
+        ['Fund exhaustion',exh?'Age '+exh.age:'None',exhB?'Age '+exhB.age:'None']
       ];
-      rightCol.appendChild(panel('A vs B Comparison',mkTable(['Metric','Scenario A','Scenario B'],cmpRows)));
+      rightCol.appendChild(panel('A vs B Comparison',mkTbl(['Metric','Scenario A','Scenario B'],cmp)));
       rightCol.appendChild(panel('Chart Comparison',balanceChart(rows,rowsB)));
     }
   }
@@ -763,7 +888,7 @@ function render(){
 
 render();
 
-  }catch(e){showFatal('Fatal: '+(e&&e.message?e.message:String(e)),e);}
+}catch(e){showFatal(e&&e.message?e.message:String(e),e);}
 })();
 </script>
 </body>
