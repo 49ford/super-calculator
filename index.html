@@ -237,8 +237,8 @@ function buildTimeline(st,returnOverrideFn){
     if(rWork){var nr=rCC*(1-st.contribTax),br=rBal+nr;rBal=br+br*st.robWorkReturn;}
     if(tWork){var nt=tCC*(1-st.contribTax),bt=tBal+nt;tBal=bt+bt*st.tinaWorkReturn;}
     var anyRet=!rWork||!tWork,bothRet=!rWork&&!tWork;
-    var yIdx=(anyRet&&age>=earliestRetire)?(age-earliestRetire):-1;
-    var stage=yIdx>=0?stageName(stageIdx(yIdx)):'';
+    var yIdx=(anyRet&&age>earliestRetire)?(age-earliestRetire-1):-1;
+    var stage=yIdx>=0?stageName(stageIdx(yIdx)):(anyRet&&age===earliestRetire?'Retiring':'');
     // Retirement returns
     if(!rWork){var rr=returnOverrideFn?returnOverrideFn(age):st.retireReturn;rBal=rBal+rBal*rr;}
     if(!tWork){var rt=returnOverrideFn?returnOverrideFn(age):st.retireReturn;tBal=tBal+tBal*rt;}
