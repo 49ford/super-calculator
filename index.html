@@ -257,8 +257,8 @@ function buildTimeline(st,returnOverrideFn){
     tBal=Math.max(0,tBal+lsTina);
     // ── Other income ────────────────────────────────────────────────────────
     var otherIncome=0;
-    if(anyRet&&age>=st.otherIncomeStartAge){
-      otherIncome=totalOther*st.otherAssetsReturn*Math.pow(1+st.otherAssetsCpi,age-st.otherIncomeStartAge);
+    if(anyRet&&age>st.otherIncomeStartAge){
+      otherIncome=totalOther*st.otherAssetsReturn*Math.pow(1+st.otherAssetsCpi,age-st.otherIncomeStartAge-1);
     }
     // ── Age pension ─────────────────────────────────────────────────────────
     var pension=0;
@@ -650,13 +650,13 @@ function narrative(rows){
   var a90=rows.filter(function(r){return r.age===90;})[0]||rows[rows.length-1];
   var exh=rows.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
   var tot=otherTotal();
-  var oi=rows.filter(function(r){return r.age===state.otherIncomeStartAge;})[0];
+  var oi=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
   var ls=state.lumpSums;
   var lines=[];
   lines.push('<strong>Retirement Outlook — V8 Summary</strong><br><br>');
   lines.push('Rob retires at <strong>age '+state.robRetireAge+'</strong> and Tina at <strong>age '+state.tinaRetireAge+'</strong>, with a combined super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at earliest retirement (Rob '+fmt(aR.robClose)+' | Tina '+fmt(aR.tinaClose)+').<br><br>');
   lines.push('Spending is phased: <strong>Golden '+fmt(state.spendGolden)+'</strong> / <strong>Silver '+fmt(state.spendSilver)+'</strong> / <strong>Legacy '+fmt(state.spendLegacy)+'</strong> per year gross. Drawdown is met first from other-asset income, then Age Pension, with the remainder from super.<br><br>');
-  if(tot>0&&oi){lines.push('Other assets total <strong>'+fmt(tot)+'</strong>, generating <strong>'+fmt(oi.otherIncome)+'</strong>/yr from age '+state.otherIncomeStartAge+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI '+fmtPct(state.otherAssetsCpi)+' p.a.).<br><br>');}
+  if(tot>0&&oi){lines.push('Other assets total <strong>'+fmt(tot)+'</strong>, generating <strong>'+fmt(oi.otherIncome)+'</strong>/yr from age '+(state.otherIncomeStartAge+1)+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI '+fmtPct(state.otherAssetsCpi)+' p.a.).<br><br>');}
   if(state.usePension&&a67){
     if(a67.pension>0){lines.push('Age Pension estimated at <strong>'+fmt(a67.pension)+'</strong>/yr from age 67.<br><br>');}
     else{lines.push('No Age Pension payable at age 67 — assets exceed threshold. May improve as balances drawdown.<br><br>');}
@@ -727,6 +727,7 @@ function render(){
   var rows=buildTimeline(state);
   var rowsB=state.showScenarioB?buildTimelineB():null;
   var rowsShock=buildShockTimeline();
+  var oiFirstRow=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
   var er=Math.min(state.robRetireAge,state.tinaRetireAge);
   var aRet=rows.filter(function(r){return r.age===er;})[0]||rows[0];
   var a67=rows.filter(function(r){return r.age===67;})[0];
@@ -853,7 +854,7 @@ function render(){
     var p67=a67?a67.pension:0;
     var cards=el('div',{class:'cards-grid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:'12px'}});
     cards.appendChild(card('Combined at retirement',fmt(aRet.combinedClose),'Age '+er+' · Rob '+fmt(aRet.robClose),'#5dd87a'));
-    cards.appendChild(card('Other income @ '+state.otherIncomeStartAge,fmt(aRet.otherIncome||0),fmt(tot)+' × '+fmtPct(state.otherAssetsReturn),'#6c8ef0'));
+    cards.appendChild(card('Other income @ '+(state.otherIncomeStartAge+1),fmt(oiFirstRow?oiFirstRow.otherIncome:0),fmt(tot)+' × '+fmtPct(state.otherAssetsReturn),'#6c8ef0'));
     cards.appendChild(card('Age Pension (at 67)',p67?fmt(p67):'—',state.usePension?(p67?'Reduces drawdown':'Below threshold'):'Disabled',p67?'#f0b96c':'#5a6080'));
     cards.appendChild(card(exh?'Exhausted at age':'Still running at',exh?String(exh.age):String(state.endAge),exh?'Household runs out':'Horizon intact',exh?'#f06c6c':'#5dd87a'));
     cards.appendChild(card('Balance at 90',fmt(a90.combinedClose),'Rob '+fmt(a90.robClose)+' · Tina '+fmt(a90.tinaClose),a90.combinedClose>0?'#a06cf0':'#f06c6c'));
@@ -919,7 +920,7 @@ function render(){
       ['Golden spend',fmt(state.spendGolden),'Gross / year'],
       ['Silver spend',fmt(state.spendSilver),'Gross / year'],
       ['Legacy spend',fmt(state.spendLegacy),'Gross / year'],
-      ['Other assets',fmt(tot),'Income '+fmt(a60?a60.otherIncome:0)+'/yr from age '+state.otherIncomeStartAge],
+      ['Other assets',fmt(tot),'Income '+fmt(oiFirstRow?oiFirstRow.otherIncome:0)+'/yr from age '+(state.otherIncomeStartAge+1)],
       ['Age Pension (age 67)',p67adv?fmt(p67adv):'Below threshold','Assets & income tested'],
       ['Balance at 90',fmt(a90.combinedClose),'Rob '+fmt(a90.robClose)+' | Tina '+fmt(a90.tinaClose)],
       ['Fund exhaustion',exh?'Age '+exh.age:'Not projected','Horizon: age '+state.endAge]
