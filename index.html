@@ -32,16 +32,19 @@ button{font-family:'DM Sans','Segoe UI',sans-serif}
 .badge-super{background:rgba(108,142,240,.15);color:#6c8ef0}
 .badge-down{background:rgba(160,108,240,.15);color:#a06cf0}
 @media(max-width:800px){
-  .main-grid{grid-template-columns:1fr!important}
-  .left-col{position:static!important}
+  .main-grid{grid-template-columns:1fr!important;height:auto!important;overflow:visible!important}
+  .left-col{height:auto!important;overflow:visible!important;border-right:none!important;padding:16px 16px 0!important}
+  .right-col{height:auto!important;overflow:visible!important;padding:0 16px 20px!important}
   .cards-grid{grid-template-columns:1fr 1fr!important}
 }
 @media(max-width:480px){.cards-grid{grid-template-columns:1fr!important}}
 @media print{
-  body{background:white!important;color:#111!important}
+  body{background:white!important;color:#111!important;height:auto!important;overflow:visible!important}
   .no-print{display:none!important}
   #chart-tooltip{display:none!important}
-  .main-grid{grid-template-columns:1fr!important}
+  #root{height:auto!important;overflow:visible!important}
+  .main-grid{grid-template-columns:1fr!important;height:auto!important;overflow:visible!important}
+  .left-col,.right-col{height:auto!important;overflow:visible!important}
   table{font-size:10px!important}
 }
 </style>
@@ -683,7 +686,7 @@ function narrative(rows){
 // ─── Mount ─────────────────────────────────────────────────────────────────
 var root=document.getElementById('root');
 root.innerHTML='';
-root.style.cssText='min-height:100vh;background:#0f1117;color:#e8eaf0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
+root.style.cssText='height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#0f1117;color:#e8eaf0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
 
 var header=el('div',{style:{padding:'12px 20px',background:'#161923',borderBottom:'1px solid #252a3a',display:'flex',justifyContent:'space-between',alignItems:'center'}},[
   el('div',{},[
@@ -699,9 +702,9 @@ var header=el('div',{style:{padding:'12px 20px',background:'#161923',borderBotto
 ]);
 
 var tabsBar=el('div',{class:'no-print',style:{display:'flex',gap:'8px',padding:'8px 20px',background:'#161923',borderBottom:'1px solid #252a3a'}});
-var mainGrid=el('div',{class:'main-grid',style:{display:'grid',gridTemplateColumns:'minmax(300px,360px) 1fr',gap:'16px',padding:'16px 20px',alignItems:'start'}});
-var leftCol=el('div',{class:'left-col no-print',style:{position:'sticky',top:'10px'}});
-var rightCol=el('div',{});
+var mainGrid=el('div',{class:'main-grid',style:{display:'grid',gridTemplateColumns:'minmax(300px,360px) 1fr',gap:'16px',padding:'0',flex:'1',minHeight:'0',overflow:'hidden',alignItems:'stretch'}});
+var leftCol=el('div',{class:'left-col no-print',style:{overflowY:'auto',height:'100%',padding:'16px 0 20px 20px',borderRight:'1px solid #252a3a'}});
+var rightCol=el('div',{class:'right-col',style:{overflowY:'auto',height:'100%',padding:'16px 20px 20px 16px'}});
 
 root.appendChild(header);root.appendChild(tabsBar);root.appendChild(mainGrid);
 mainGrid.appendChild(leftCol);mainGrid.appendChild(rightCol);
