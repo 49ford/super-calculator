@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Superannuation Calculator V9</title>
+<title>Superannuation Calculator V10</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-serif}
@@ -138,17 +138,26 @@ function defaultState(){
     },
     lumpSums:[],
     shock:{enabled:false,type:'crash',magnitude:25,startOffset:1,durationYears:2},
-    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false}
+    ncc:{enabled:false,robAnnual:0,tinaAnnual:0,startAge:54,endAge:60},
+    partTime:{enabled:false,robAmount:0,robStartAge:60,robEndAge:63,tinaAmount:0,tinaStartAge:60,tinaEndAge:63},
+    minDrawdown:{enabled:true},
+    pensionBoost:{enabled:false,rate:0.012},
+    monteCarlo:{enabled:false,runs:300,stdDev:10},
+    goal:{enabled:false,targetBalance:500000},
+    netWorth:{homeValue:1500000,homeCpi:0.04},
+    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true}
   };
 }
 
 // ─── localStorage ──────────────────────────────────────────────────────────
-var LS_KEY='supercalc_v9_state';
+var LS_KEY='supercalc_v10_state';
 function loadState(){
   try{
     var raw=localStorage.getItem(LS_KEY);
     if(!raw){
       // Migrate from v7 if present
+      var v9=localStorage.getItem('supercalc_v9_state');
+      if(v9){var s=JSON.parse(v9);delete s.tab;return deepMerge(defaultState(),s);}
       var v8=localStorage.getItem('supercalc_v8_state');
       if(v8){var s=JSON.parse(v8);delete s.tab;return deepMerge(defaultState(),s);}
       var v7=localStorage.getItem('supercalc_v7_state');
@@ -215,6 +224,12 @@ function fmtReal(n,yrs){
 }
 function otherTotal(){var b=state.otherAssetsBuckets;return(b.realestate||0)+(b.shares||0)+(b.other||0);}
 
+// ─── Min drawdown rates (ATO schedule) ────────────────────────────────────
+function minDrawdownRate(age){
+  if(age<65)return 0.04;if(age<75)return 0.05;if(age<80)return 0.06;
+  if(age<85)return 0.07;if(age<90)return 0.09;return 0.14;
+}
+
 // ─── Timeline builder ──────────────────────────────────────────────────────
 function buildTimeline(st,returnOverrideFn){
   var rows=[];
@@ -236,12 +251,19 @@ function buildTimeline(st,returnOverrideFn){
     // Accumulation returns
     if(rWork){var nr=rCC*(1-st.contribTax),br=rBal+nr;rBal=br+br*st.robWorkReturn;}
     if(tWork){var nt=tCC*(1-st.contribTax),bt=tBal+nt;tBal=bt+bt*st.tinaWorkReturn;}
+    // Non-concessional contributions (no tax, any phase)
+    var robNCC=0,tinaNCC=0;
+    if(st.ncc&&st.ncc.enabled&&age>=st.ncc.startAge&&age<=st.ncc.endAge){
+      robNCC=st.ncc.robAnnual||0;tinaNCC=st.ncc.tinaAnnual||0;
+      rBal+=robNCC;tBal+=tinaNCC;
+    }
     var anyRet=!rWork||!tWork,bothRet=!rWork&&!tWork;
     var yIdx=(anyRet&&age>earliestRetire)?(age-earliestRetire-1):-1;
     var stage=yIdx>=0?stageName(stageIdx(yIdx)):(anyRet&&age===earliestRetire?'Retiring':'');
-    // Retirement returns
-    if(!rWork){var rr=returnOverrideFn?returnOverrideFn(age):st.retireReturn;rBal=rBal+rBal*rr;}
-    if(!tWork){var rt=returnOverrideFn?returnOverrideFn(age):st.retireReturn;tBal=tBal+tBal*rt;}
+    // Retirement returns (+ optional pension-phase tax boost)
+    var pb=st.pensionBoost&&st.pensionBoost.enabled?st.pensionBoost.rate||0.012:0;
+    if(!rWork){var rr=(returnOverrideFn?returnOverrideFn(age):st.retireReturn)+pb;rBal=rBal+rBal*rr;}
+    if(!tWork){var rt=(returnOverrideFn?returnOverrideFn(age):st.retireReturn)+pb;tBal=tBal+tBal*rt;}
     // ── Lump sums applied after returns ────────────────────────────────────
     var lsRob=0,lsTina=0,lsItems=[];
     (st.lumpSums||[]).forEach(function(ls){
@@ -271,9 +293,15 @@ function buildTimeline(st,returnOverrideFn){
         incomeFreeArea:st.incomeFreeArea,incomeTaperRate:st.incomeTaperRate
       });
     }
+    // ── Part-time / phased retirement income ────────────────────────────────
+    var ptIncome=0;
+    if(st.partTime&&st.partTime.enabled){
+      if(age>st.robRetireAge&&age<=st.partTime.robEndAge)ptIncome+=st.partTime.robAmount||0;
+      if(age>st.tinaRetireAge&&age<=st.partTime.tinaEndAge)ptIncome+=st.partTime.tinaAmount||0;
+    }
     // ── Spend ────────────────────────────────────────────────────────────────
     var grossSpend=yIdx>=0?(yIdx<thirdSize()?st.spendGolden:yIdx<thirdSize()*2?st.spendSilver:st.spendLegacy):0;
-    var netSpend=Math.max(0,grossSpend-pension-otherIncome);
+    var netSpend=Math.max(0,grossSpend-pension-otherIncome-ptIncome);
     var rSpend=0,tSpend=0;
     if(netSpend>0){
       if(bothRet){
@@ -284,12 +312,18 @@ function buildTimeline(st,returnOverrideFn){
       }else if(!rWork){rSpend=Math.min(rBal,netSpend);}
       else{tSpend=Math.min(tBal,netSpend);}
     }
+    // ── Minimum drawdown enforcement (ATO) ──────────────────────────────────
+    if(st.minDrawdown&&st.minDrawdown.enabled){
+      var mdRate=minDrawdownRate(age);
+      if(!rWork){var robMD=rBal*mdRate;if(robMD>rSpend)rSpend=Math.min(rBal,robMD);}
+      if(!tWork){var tinaMD=tBal*mdRate;if(tinaMD>tSpend)tSpend=Math.min(tBal,tinaMD);}
+    }
     rBal=Math.max(0,rBal-rSpend);
     tBal=Math.max(0,tBal-tSpend);
     rows.push({age,phase:'FORECAST',stage,
       robClose:rBal,tinaClose:tBal,combinedClose:rBal+tBal,
-      grossSpend,otherIncome,pension,robSpend:rSpend,tinaSpend:tSpend,
-      robCC:rCC,tinaCC:tCC,lsRob,lsTina,lsItems});
+      grossSpend,otherIncome,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
+      robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,lsRob,lsTina,lsItems});
   }
   var startAge=st.showActuals?48:54;
   return rows.filter(function(r){return r.age>=startAge;});
@@ -307,6 +341,76 @@ function buildShockTimeline(){
   return buildTimeline(state,function(age){
     if(age>=shockStart&&age<=shockEnd)return shockRet;
     return state.retireReturn;
+  });
+}
+
+// ─── Monte Carlo ──────────────────────────────────────────────────────────
+function buildMonteCarloRows(){
+  if(!state.monteCarlo||!state.monteCarlo.enabled)return null;
+  var runs=Math.min(state.monteCarlo.runs||300,500);
+  var sigma=(state.monteCarlo.stdDev||10)/100;
+  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var seed=54321;
+  function rng(){seed=((seed*1664525+1013904223)>>>0);return seed/4294967296;}
+  function randn(){var u=Math.max(1e-9,rng()),v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(6.2831853*v);}
+  var ages=[];var sa=state.showActuals?48:54;
+  for(var a=sa;a<=state.endAge;a++)ages.push(a);
+  var byAge={};ages.forEach(function(a){byAge[a]=[];});
+  for(var i=0;i<runs;i++){
+    var rm={};
+    for(var a=54;a<=state.endAge;a++){
+      var mean=a<er?state.robWorkReturn:state.retireReturn;
+      rm[a]=Math.max(-0.5,Math.min(0.6,mean+sigma*randn()));
+    }
+    var ovFn=function(age){return rm[age]!==undefined?rm[age]:state.retireReturn;};
+    buildTimeline(state,ovFn).forEach(function(r){if(byAge[r.age])byAge[r.age].push(r.combinedClose);});
+  }
+  function pct(arr,p){var s=arr.slice().sort(function(a,b){return a-b;});return s[Math.min(Math.floor(p*s.length),s.length-1)]||0;}
+  return ages.map(function(a){var v=byAge[a]||[];return{age:a,p10:pct(v,.1),p25:pct(v,.25),p50:pct(v,.5),p75:pct(v,.75),p90:pct(v,.9)};});
+}
+
+// ─── Goal solver (binary search) ──────────────────────────────────────────
+function solveMaxSpend(targetBalance){
+  var lo=0,hi=2000000;
+  for(var i=0;i<60;i++){
+    var mid=(lo+hi)/2;
+    var ratio=mid/Math.max(1,state.spendGolden);
+    var st2=Object.assign({},state,{spendGolden:mid,spendSilver:state.spendSilver*ratio,spendLegacy:state.spendLegacy*ratio});
+    var last=buildTimeline(st2).filter(function(r){return r.phase==='FORECAST';});
+    last=last[last.length-1];
+    if(last&&last.combinedClose>=targetBalance)lo=mid;else hi=mid;
+  }
+  return Math.round(lo/1000)*1000;
+}
+
+// ─── Sensitivity grid ─────────────────────────────────────────────────────
+function buildSensitivity(){
+  var rDeltas=[-0.02,-0.01,0,0.01,0.02];
+  var sDeltas=[-50000,-25000,0,25000,50000];
+  return{
+    rDeltas:rDeltas,sDeltas:sDeltas,
+    grid:sDeltas.map(function(sd){
+      return rDeltas.map(function(rd){
+        var st2=Object.assign({},state,{retireReturn:Math.max(0,state.retireReturn+rd),
+          spendGolden:Math.max(0,state.spendGolden+sd),
+          spendSilver:Math.max(0,state.spendSilver+sd),
+          spendLegacy:Math.max(0,state.spendLegacy+sd)});
+        var rows=buildTimeline(st2).filter(function(r){return r.phase==='FORECAST';});
+        return rows.length?rows[rows.length-1].combinedClose:0;
+      });
+    })
+  };
+}
+
+// ─── Net worth rows ────────────────────────────────────────────────────────
+function netWorthRows(rows){
+  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var hv=state.netWorth?state.netWorth.homeValue:0;
+  var hc=state.netWorth?state.netWorth.homeCpi:0.04;
+  var oa=otherTotal();
+  return rows.filter(function(r){return r.phase==='FORECAST';}).map(function(r){
+    var homeEq=state.homeowner&&hv>0?hv*Math.pow(1+hc,r.age-er):0;
+    return{age:r.age,superBal:r.combinedClose,home:homeEq,other:oa,total:r.combinedClose+homeEq+oa};
   });
 }
 
@@ -377,6 +481,153 @@ function mkTbl(headers,rows){
         color:'#c0c5d8',borderBottom:'1px solid rgba(37,42,58,.3)'}},c);})));
   });
   tbl.appendChild(tbody);return tbl;
+}
+
+
+// ─── Income sources stacked area chart ────────────────────────────────────
+function incomeStackChart(rows){
+  var fRows=rows.filter(function(r){return r.phase==='FORECAST'&&r.grossSpend>0;});
+  if(!fRows.length)return null;
+  var W=980,H=260,pL=72,pR=22,pT=20,pB=42;
+  var xMin=fRows[0].age,xMax=fRows[fRows.length-1].age;
+  var yMax=Math.max.apply(null,fRows.map(function(r){return r.grossSpend;}))*1.1;
+  var xD=(xMax-xMin)||1,yD=yMax||1;
+  function xp(a){return pL+((a-xMin)/xD)*(W-pL-pR);}
+  function yp(v){return pT+(1-(v/yD))*(H-pT-pB);}
+  var svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H,style:'width:100%;height:auto;display:block'});
+  svg.appendChild(svgEl('rect',{x:'0',y:'0',width:String(W),height:String(H),fill:'#0f1117'}));
+  // Grid lines
+  for(var gi=0;gi<=4;gi++){var gv=yMax*gi/4,gy=yp(gv);
+    svg.appendChild(svgEl('line',{x1:String(pL),y1:String(gy),x2:String(W-pR),y2:String(gy),stroke:'rgba(255,255,255,.05)'}));
+    svg.appendChild(svgEl('text',{x:String(pL-6),y:String(gy+4),fill:'#5a6080','text-anchor':'end',style:'font-size:9px;font-family:monospace'},'$'+Math.round(gv/1000)+'k'));
+  }
+  var step=Math.max(1,Math.ceil((xMax-xMin)/8));
+  for(var xa=xMin;xa<=xMax;xa+=step)svg.appendChild(svgEl('text',{x:String(xp(xa)),y:String(H-pB+16),fill:'#5a6080','text-anchor':'middle',style:'font-size:9px'},String(xa)));
+  svg.appendChild(svgEl('line',{x1:String(pL),y1:String(H-pB),x2:String(W-pR),y2:String(H-pB),stroke:'rgba(255,255,255,.1)'}));
+  // Draw stacked areas: pension → other → partTime → super drawdown
+  var layers=[
+    {key:'pension',col:'rgba(240,185,108,0.75)',lbl:'Age Pension'},
+    {key:'otherIncome',col:'rgba(160,108,240,0.6)',lbl:'Other Income'},
+    {key:'ptIncome',col:'rgba(93,216,122,0.6)',lbl:'Part-time'},
+    {key:'superDraw',col:'rgba(108,142,240,0.55)',lbl:'Super Drawdown'}
+  ];
+  function stackedPts(bottom,top,rev){
+    var pts=bottom.map(function(b,i){return xp(fRows[i].age).toFixed(1)+','+yp(b).toFixed(1);});
+    var topPts=top.map(function(t,i){return xp(fRows[i].age).toFixed(1)+','+yp(t).toFixed(1);});
+    if(rev)topPts=topPts.slice().reverse();
+    return pts.join(' ')+' '+topPts.join(' ');
+  }
+  var bottoms=fRows.map(function(){return 0;});
+  var drawnLayers=[];
+  layers.forEach(function(ly){
+    var vals=fRows.map(function(r){
+      if(ly.key==='superDraw')return(r.robSpend||0)+(r.tinaSpend||0);
+      return r[ly.key]||0;
+    });
+    var topped=vals.map(function(v,i){return bottoms[i]+v;});
+    if(topped.some(function(v){return v>0;})){
+      var fwdPts=topped.map(function(t,i){return xp(fRows[i].age).toFixed(1)+','+yp(t).toFixed(1);});
+      var bwdPts=bottoms.map(function(b,i){return xp(fRows[i].age).toFixed(1)+','+yp(b).toFixed(1);}).slice().reverse();
+      svg.appendChild(svgEl('polygon',{points:fwdPts.join(' ')+' '+bwdPts.join(' '),fill:ly.col,stroke:'none'}));
+      svg.appendChild(svgEl('path',{d:fwdPts.map(function(p,i){return(i?'L ':'M ')+p;}).join(' '),fill:'none',stroke:ly.col.replace(/[\d.]+\)$/,'1)'),'stroke-width':'1'}));
+      drawnLayers.push(ly);
+    }
+    bottoms=topped;
+  });
+  // Gross spend cap line
+  var spendLine=fRows.map(function(r,i){return(i?'L ':'M ')+xp(r.age).toFixed(1)+' '+yp(r.grossSpend).toFixed(1);}).join(' ');
+  svg.appendChild(svgEl('path',{d:spendLine,fill:'none',stroke:'rgba(255,255,255,0.18)','stroke-width':'1','stroke-dasharray':'4,3'}));
+  // Legend
+  drawnLayers.forEach(function(ly,j){var lx=pL+j*130,ly2=H-4;
+    svg.appendChild(svgEl('rect',{x:String(lx),y:String(ly2-9),width:'10',height:'10',fill:ly.col}));
+    svg.appendChild(svgEl('text',{x:String(lx+14),y:String(ly2),fill:'#c0c5d8',style:'font-size:10px'},ly.lbl));
+  });
+  return svg;
+}
+
+// ─── Net worth chart ───────────────────────────────────────────────────────
+function netWorthChart(nwRows){
+  if(!nwRows||!nwRows.length)return null;
+  var W=980,H=260,pL=72,pR=22,pT=20,pB=42;
+  var xMin=nwRows[0].age,xMax=nwRows[nwRows.length-1].age;
+  var yMax=Math.max.apply(null,nwRows.map(function(r){return r.total;}))*1.08||1;
+  var xD=(xMax-xMin)||1;
+  function xp(a){return pL+((a-xMin)/xD)*(W-pL-pR);}
+  function yp(v){return pT+(1-(v/(yMax||1)))*(H-pT-pB);}
+  function mkPath(key){return nwRows.map(function(r,i){return(i?'L ':'M ')+xp(r.age).toFixed(1)+' '+yp(r[key]).toFixed(1);}).join(' ');}
+  var svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H,style:'width:100%;height:auto;display:block'});
+  svg.appendChild(svgEl('rect',{x:'0',y:'0',width:String(W),height:String(H),fill:'#0f1117'}));
+  for(var gi=0;gi<=4;gi++){var gv=yMax*gi/4,gy=yp(gv);
+    svg.appendChild(svgEl('line',{x1:String(pL),y1:String(gy),x2:String(W-pR),y2:String(gy),stroke:'rgba(255,255,255,.05)'}));
+    svg.appendChild(svgEl('text',{x:String(pL-6),y:String(gy+4),fill:'#5a6080','text-anchor':'end',style:'font-size:9px;font-family:monospace'},'$'+Math.round(gv/1000)+'k'));
+  }
+  var step=Math.max(1,Math.ceil((xMax-xMin)/8));
+  for(var xa=xMin;xa<=xMax;xa+=step)svg.appendChild(svgEl('text',{x:String(xp(xa)),y:String(H-pB+16),fill:'#5a6080','text-anchor':'middle',style:'font-size:9px'},String(xa)));
+  svg.appendChild(svgEl('line',{x1:String(pL),y1:String(H-pB),x2:String(W-pR),y2:String(H-pB),stroke:'rgba(255,255,255,.1)'}));
+  // Stacked area: super, home, other
+  var layers2=[
+    {key:'superBal',col:'rgba(108,142,240,0.55)',lbl:'Super'},
+    {key:'home',col:'rgba(93,216,122,0.45)',lbl:'Home Equity'},
+    {key:'other',col:'rgba(240,185,108,0.45)',lbl:'Other Assets'}
+  ];
+  var bot=nwRows.map(function(){return 0;});
+  layers2.forEach(function(ly){
+    var vals=nwRows.map(function(r){return r[ly.key]||0;});
+    var top=vals.map(function(v,i){return bot[i]+v;});
+    if(top.some(function(v){return v>0;})){
+      var fpts=top.map(function(t,i){return xp(nwRows[i].age).toFixed(1)+','+yp(t).toFixed(1);});
+      var bpts=bot.map(function(b,i){return xp(nwRows[i].age).toFixed(1)+','+yp(b).toFixed(1);}).slice().reverse();
+      svg.appendChild(svgEl('polygon',{points:fpts.join(' ')+' '+bpts.join(' '),fill:ly.col}));
+      svg.appendChild(svgEl('path',{d:fpts.map(function(p,i){return(i?'L ':'M ')+p;}).join(' '),fill:'none',stroke:ly.col.replace(/[\d.]+\)$/,'1)'),'stroke-width':'1.5'}));
+    }
+    bot=top;
+  });
+  svg.appendChild(svgEl('path',{d:mkPath('total'),fill:'none',stroke:'#e8eaf0','stroke-width':'2'}));
+  var legNW=[{l:'Super',c:'rgba(108,142,240,0.7)'},{l:'Home',c:'rgba(93,216,122,0.7)'},{l:'Other',c:'rgba(240,185,108,0.7)'},{l:'Total',c:'#e8eaf0'}];
+  legNW.forEach(function(it,j){var lx=pL+j*120,ly=H-4;
+    svg.appendChild(svgEl('rect',{x:String(lx),y:String(ly-9),width:'10',height:'10',fill:it.c}));
+    svg.appendChild(svgEl('text',{x:String(lx+14),y:String(ly),fill:'#c0c5d8',style:'font-size:10px'},it.l));
+  });
+  return svg;
+}
+
+// ─── Sensitivity table ─────────────────────────────────────────────────────
+function sensitivityTable(){
+  var data=buildSensitivity();
+  var baseVal=data.grid[2][2]; // centre cell
+  var wrap=el('div',{style:{overflowX:'auto'}});
+  var tbl=el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'11px',fontFamily:'monospace'}});
+  // Header row (return deltas)
+  var hRow=el('tr',{});
+  hRow.appendChild(el('th',{style:{padding:'5px 8px',color:'#5a6080',textAlign:'right',fontSize:'10px'}},'Spend↓ / Ret→'));
+  data.rDeltas.forEach(function(rd){
+    var lbl=(rd>0?'+':'')+Math.round(rd*100)+'%';
+    hRow.appendChild(el('th',{style:{padding:'5px 8px',color:'#7a8099',textAlign:'center',fontSize:'10px',fontWeight:'900'}},lbl));
+  });
+  tbl.appendChild(el('thead',{},[hRow]));
+  var tbody=el('tbody',{});
+  data.sDeltas.forEach(function(sd,si){
+    var sLbl=(sd>0?'+':sd===0?'Base':'')+fmt(sd===0?state.spendGolden:Math.abs(sd));
+    if(sd===0)sLbl='Base ('+fmt(state.spendGolden)+')';
+    var row=el('tr',{});
+    row.appendChild(el('td',{style:{padding:'5px 8px',color:'#7a8099',textAlign:'right',fontSize:'10px',whiteSpace:'nowrap'}},sLbl));
+    data.grid[si].forEach(function(val,ri){
+      var isBase=si===2&&ri===2;
+      var pct=(val-baseVal)/(Math.abs(baseVal)||1);
+      var g=Math.max(0,Math.min(1,val>0?pct+0.5:0));
+      var r=Math.max(0,Math.min(1,val<=0?1:1-pct-0.5));
+      var bg=val>0?'rgba(93,216,122,'+(0.08+g*0.25)+')':'rgba(240,108,108,'+(0.15+r*0.3)+')';
+      row.appendChild(el('td',{style:{padding:'5px 8px',textAlign:'center',background:isBase?'rgba(108,142,240,0.2)':bg,
+        color:val>0?'#5dd87a':'#f06c6c',fontWeight:isBase?'900':'700',border:isBase?'1px solid rgba(108,142,240,0.5)':'none'}},
+        val>0?'$'+Math.round(val/1000)+'k':val<=0?'Exhausted':'—'));
+    });
+    tbody.appendChild(row);
+  });
+  tbl.appendChild(tbody);
+  wrap.appendChild(tbl);
+  var note=el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'5px'}},'Values = combined super balance at age '+state.endAge+'. Blue = base scenario. Return delta applied to retirement return only.');
+  wrap.appendChild(note);
+  return wrap;
 }
 
 // ─── Lump sum editor ───────────────────────────────────────────────────────
@@ -512,12 +763,13 @@ function lumpSumEditor(){
 }
 
 // ─── Chart ─────────────────────────────────────────────────────────────────
-function balanceChart(rows,rowsB,rowsShock){
+function balanceChart(rows,rowsB,rowsShock,mcRows){
   var W=980,H=340,pL=72,pR=22,pT=28,pB=42;
   var xMin=rows[0].age,xMax=rows[rows.length-1].age;
   var allVals=rows.map(function(r){return r.combinedClose;});
   if(rowsB)rowsB.forEach(function(r){allVals.push(r.combinedClose);});
   if(rowsShock)rowsShock.forEach(function(r){allVals.push(r.combinedClose);});
+  if(mcRows){var mcFcast=mcRows.filter(function(r){return r.age>=54;});if(mcFcast.length){allVals.push(mcFcast[mcFcast.length-1].p90);}}
   var yMax=Math.max.apply(null,allVals)*1.08;
   var xD=(xMax-xMin)||1,yD=yMax||1;
   function xp(a){return pL+((a-xMin)/xD)*(W-pL-pR);}
@@ -554,6 +806,20 @@ function balanceChart(rows,rowsB,rowsShock){
   addMarker(state.robRetireAge,'Rob '+state.robRetireAge,'#6c8ef0');
   if(state.tinaRetireAge!==state.robRetireAge)addMarker(state.tinaRetireAge,'Tina '+state.tinaRetireAge,'#a06cf0');
 
+  // Monte Carlo band (p10–p90)
+  if(mcRows&&mcRows.length>1){
+    var mcF=mcRows.filter(function(r){return r.age>=54;});
+    if(mcF.length>1){
+      var fwd=mcF.map(function(r){return xp(r.age).toFixed(1)+','+yp(r.p90).toFixed(1);}).join(' ');
+      var bwd=mcF.slice().reverse().map(function(r){return xp(r.age).toFixed(1)+','+yp(r.p10).toFixed(1);}).join(' ');
+      svg.appendChild(svgEl('polygon',{points:fwd+' '+bwd,fill:'rgba(93,216,122,0.08)',stroke:'none'}));
+      var fwd25=mcF.map(function(r){return xp(r.age).toFixed(1)+','+yp(r.p75).toFixed(1);}).join(' ');
+      var bwd25=mcF.slice().reverse().map(function(r){return xp(r.age).toFixed(1)+','+yp(r.p25).toFixed(1);}).join(' ');
+      svg.appendChild(svgEl('polygon',{points:fwd25+' '+bwd25,fill:'rgba(93,216,122,0.10)',stroke:'none'}));
+      var medPts=mcF.map(function(r,i){return(i===0?'M ':'L ')+xp(r.age).toFixed(1)+' '+yp(r.p50).toFixed(1);}).join(' ');
+      svg.appendChild(svgEl('path',{d:medPts,fill:'none',stroke:'rgba(93,216,122,0.55)','stroke-width':'1.5','stroke-dasharray':'3,3'}));
+    }
+  }
   // Balance lines
   svg.appendChild(svgEl('path',{d:mkPath(rows,'robClose'),fill:'none',stroke:'#6c8ef0','stroke-width':'2'}));
   svg.appendChild(svgEl('path',{d:mkPath(rows,'tinaClose'),fill:'none',stroke:'#a06cf0','stroke-width':'2'}));
@@ -591,6 +857,7 @@ function balanceChart(rows,rowsB,rowsShock){
   var legItems=[{l:'Rob',c:'#6c8ef0'},{l:'Tina',c:'#a06cf0'},{l:'Combined A',c:'#5dd87a'}];
   if(rowsB)legItems.push({l:'Combined B',c:'#f0b96c'});
   if(rowsShock){var sc2=state.shock.type==='crash'?'#f06c6c':'#00e5cc';legItems.push({l:(state.shock.type==='crash'?'Crash':'Boom')+' Shock',c:sc2});}
+  if(mcRows)legItems.push({l:'MC Median',c:'rgba(93,216,122,0.7)'});
   legItems.forEach(function(it,j){
     var lx=pL+j*120,ly=H-4;
     svg.appendChild(svgEl('rect',{x:String(lx),y:String(ly-9),width:'10',height:'10',fill:it.c}));
@@ -634,6 +901,7 @@ function balanceChart(rows,rowsB,rowsShock){
       h+='</div>';
     }
     if(rowsB){var rb=rowsB.filter(function(r){return r.age===age;})[0];if(rb)h+='<div style="color:#f0b96c;margin-top:4px">B Combined: '+fmt(rb.combinedClose)+'</div>';}
+    if(mcRows){var mc=mcRows.filter(function(r){return r.age===age;})[0];if(mc){h+='<div style="color:rgba(93,216,122,0.8);margin-top:4px;font-size:11px">MC p10–p90: '+fmt(mc.p10)+' → '+fmt(mc.p90)+'</div>';}}
     if(rowsShock){var rs=rowsShock.filter(function(r){return r.age===age;})[0];if(rs){var sc=state.shock.type==='crash'?'#f06c6c':'#00e5cc';var diff=rs.combinedClose-row.combinedClose;var diffStr=(diff>=0?'+':'')+fmt(Math.abs(diff));h+='<div style="color:'+sc+';margin-top:4px">Shock Combined: '+fmt(rs.combinedClose)+'<br><span style="font-size:10px;opacity:.8">Impact: '+diffStr+'</span></div>';}}
     tip.innerHTML=h;tip.style.display='block';
     tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-20)+'px';
@@ -690,9 +958,9 @@ root.style.cssText='height:100vh;display:flex;flex-direction:column;overflow:hid
 
 var header=el('div',{style:{padding:'12px 20px',background:'#161923',borderBottom:'1px solid #252a3a',display:'flex',justifyContent:'space-between',alignItems:'center'}},[
   el('div',{},[
-    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V9 | SUPER CALCULATOR'),
+    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V10 | SUPER CALCULATOR'),
     el('div',{style:{fontSize:'20px',fontWeight:'900',marginTop:'2px'}},'Superannuation Calculator'),
-    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'Rob & Tina · Phased spend · Lump sums · Scenario B · Shock · Pension model')
+    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'V10 · Monte Carlo · Min drawdown · NCC · Part-time · Net worth · Goal solver')
   ]),
   el('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}},[
     el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},onClick:function(){window.print();}}, '🖨 Print'),
@@ -728,6 +996,8 @@ function render(){
   var rowsB=state.showScenarioB?buildTimelineB():null;
   var rowsShock=buildShockTimeline();
   var oiFirstRow=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
+  var mcRows=buildMonteCarloRows();
+  var nwRows=netWorthRows(rows);
   var er=Math.min(state.robRetireAge,state.tinaRetireAge);
   var aRet=rows.filter(function(r){return r.age===er;})[0]||rows[0];
   var a67=rows.filter(function(r){return r.age===67;})[0];
@@ -740,6 +1010,13 @@ function render(){
   ctrl.appendChild(tog(state.showActuals?'Actuals ON (to FY2025)':'Actuals OFF',state.showActuals,function(){state.showActuals=!state.showActuals;render();}));
   ctrl.appendChild(tog(state.showInflationAdj?'Real $ ON ('+fmtPct(state.inflationRate)+' CPI) ★':'Nominal $ (click for real)',state.showInflationAdj,function(){state.showInflationAdj=!state.showInflationAdj;render();}));
   ctrl.appendChild(tog(state.showScenarioB?'Scenario B: ON (amber dashed)':'Scenario B: OFF',state.showScenarioB,function(){state.showScenarioB=!state.showScenarioB;render();}));
+  // Monte Carlo toggle
+  ctrl.appendChild(el('button',{style:{padding:'7px 10px',borderRadius:'10px',border:'1px solid #252a3a',
+    background:state.monteCarlo&&state.monteCarlo.enabled?'rgba(93,216,122,.12)':'transparent',
+    color:state.monteCarlo&&state.monteCarlo.enabled?'#5dd87a':'#7a8099',
+    cursor:'pointer',fontWeight:'900',width:'100%',textAlign:'left',marginBottom:'6px'},
+    onClick:function(){state.monteCarlo.enabled=!state.monteCarlo.enabled;render();}},
+    state.monteCarlo&&state.monteCarlo.enabled?('🎲 Monte Carlo ON (±'+state.monteCarlo.stdDev+'% σ, '+state.monteCarlo.runs+' runs)'):'🎲 Monte Carlo: OFF'));
   var shockOnCol=state.shock.enabled?(state.shock.type==='crash'?'#f06c6c':'#00e5cc'):'#7a8099';
   var shockLabel=state.shock.enabled?('⚡ Shock: '+state.shock.type.toUpperCase()+' −'+state.shock.magnitude+'% ('+state.shock.durationYears+'yr from ret+'+state.shock.startOffset+')'):'⚡ Market Shock: OFF';
   ctrl.appendChild(el('button',{style:{padding:'7px 10px',borderRadius:'10px',border:'1px solid #252a3a',
@@ -752,6 +1029,8 @@ function render(){
     d.appendChild(sld('Tina work return',3,15,0.05,state.tinaWorkReturn*100,fmtPct(state.tinaWorkReturn),function(v){state.tinaWorkReturn=v/100;render();}));
     d.appendChild(sld('Retirement return',0,12,0.05,state.retireReturn*100,fmtPct(state.retireReturn),function(v){state.retireReturn=v/100;render();}));
     if(state.showInflationAdj)d.appendChild(sld('CPI rate',1,8,0.1,state.inflationRate*100,fmtPct(state.inflationRate),function(v){state.inflationRate=v/100;render();}));
+    d.appendChild(tog(state.pensionBoost.enabled?'Pension phase boost: +'+fmtPct(state.pensionBoost.rate)+' (tax saving ON)':'Pension phase boost: OFF',state.pensionBoost.enabled,function(){state.pensionBoost.enabled=!state.pensionBoost.enabled;render();}));
+    if(state.pensionBoost.enabled)d.appendChild(sld('Boost rate (≈ tax saving)',0.3,3,0.1,state.pensionBoost.rate*100,(state.pensionBoost.rate*100).toFixed(1)+'%',function(v){state.pensionBoost.rate=v/100;render();}));
     return d;
   }));
 
@@ -788,6 +1067,7 @@ function render(){
     var bv=state.otherAssetsBuckets[state.otherAssetsBucket]||0;
     d.appendChild(sld('Principal',0,2000000,25000,bv,fmt(bv),function(v){state.otherAssetsBuckets[state.otherAssetsBucket]=v;render();}));
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'7px'}},'Total: '+fmt(tot)));
+    if(state.homeowner){d.appendChild(sld('Home value ($)',0,5000000,50000,state.netWorth.homeValue,fmt(state.netWorth.homeValue),function(v){state.netWorth.homeValue=v;render();}));d.appendChild(sld('Home CPI growth',0,10,0.1,state.netWorth.homeCpi*100,(state.netWorth.homeCpi*100).toFixed(1)+'%',function(v){state.netWorth.homeCpi=v/100;render();}));}
     d.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'7px'}},[
       segBtn('Yield',state.otherAssetsRateMode==='yield',function(){state.otherAssetsRateMode='yield';render();}),
       segBtn('CPI',state.otherAssetsRateMode==='cpi',function(){state.otherAssetsRateMode='cpi';render();})
@@ -827,6 +1107,64 @@ function render(){
     }
     return d;
   }));
+  ctrl.appendChild(collSec('ncc','Non-Concessional Contributions',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},'After-tax contributions — no 15% contributions tax. Cap: $110k/yr (age ≤ 75).'));
+    d.appendChild(tog(state.ncc.enabled?'NCC: ON':'NCC: OFF',state.ncc.enabled,function(){state.ncc.enabled=!state.ncc.enabled;render();}));
+    d.appendChild(sld('Rob NCC ($/yr)',0,200000,5000,state.ncc.robAnnual,fmt(state.ncc.robAnnual),function(v){state.ncc.robAnnual=v;render();}));
+    d.appendChild(sld('Tina NCC ($/yr)',0,200000,5000,state.ncc.tinaAnnual,fmt(state.ncc.tinaAnnual),function(v){state.ncc.tinaAnnual=v;render();}));
+    d.appendChild(sld('From age',45,75,1,state.ncc.startAge,String(state.ncc.startAge),function(v){state.ncc.startAge=v;render();}));
+    d.appendChild(sld('To age',45,75,1,state.ncc.endAge,String(state.ncc.endAge),function(v){state.ncc.endAge=v;render();}));
+    return d;
+  }));
+
+  ctrl.appendChild(collSec('parttime','Part-time / Phased Retirement',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},'Income from consulting, part-time work, or other sources post-retirement. Reduces super drawdown.'));
+    d.appendChild(tog(state.partTime.enabled?'Part-time: ON':'Part-time: OFF',state.partTime.enabled,function(){state.partTime.enabled=!state.partTime.enabled;render();}));
+    d.appendChild(sld('Rob income ($/yr)',0,200000,5000,state.partTime.robAmount,fmt(state.partTime.robAmount),function(v){state.partTime.robAmount=v;render();}));
+    d.appendChild(sld('Rob ends at age',55,75,1,state.partTime.robEndAge,String(state.partTime.robEndAge),function(v){state.partTime.robEndAge=v;render();}));
+    d.appendChild(sld('Tina income ($/yr)',0,200000,5000,state.partTime.tinaAmount,fmt(state.partTime.tinaAmount),function(v){state.partTime.tinaAmount=v;render();}));
+    d.appendChild(sld('Tina ends at age',55,75,1,state.partTime.tinaEndAge,String(state.partTime.tinaEndAge),function(v){state.partTime.tinaEndAge=v;render();}));
+    return d;
+  }));
+
+  ctrl.appendChild(collSec('montecarlo','Monte Carlo Settings',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},'Simulates '+state.monteCarlo.runs+' random return sequences. Shaded band on chart shows p10–p90 range.'));
+    d.appendChild(tog(state.monteCarlo.enabled?'Monte Carlo: ON':'Monte Carlo: OFF',state.monteCarlo.enabled,function(){state.monteCarlo.enabled=!state.monteCarlo.enabled;render();}));
+    d.appendChild(sld('Return std deviation (σ)',3,25,1,state.monteCarlo.stdDev,state.monteCarlo.stdDev+'%',function(v){state.monteCarlo.stdDev=v;render();}));
+    d.appendChild(sld('Simulation runs',100,500,50,state.monteCarlo.runs,String(state.monteCarlo.runs)+' runs',function(v){state.monteCarlo.runs=v;render();}));
+    if(state.monteCarlo.enabled&&mcRows){
+      var last=mcRows[mcRows.length-1];
+      d.appendChild(el('div',{style:{marginTop:'8px',padding:'8px',background:'#0a0c12',borderRadius:'8px',fontSize:'11px',lineHeight:'1.6'}},[
+        el('div',{style:{color:'#c0c5d8',fontWeight:'700'}},'At age '+state.endAge+':'),
+        el('div',{style:{color:'#5dd87a'}},'Best 10%: '+fmt(last.p90)),
+        el('div',{style:{color:'#6c8ef0'}},'Median:   '+fmt(last.p50)),
+        el('div',{style:{color:'#f06c6c'}},'Worst 10%: '+fmt(last.p10))
+      ]));
+    }
+    return d;
+  }));
+
+  ctrl.appendChild(collSec('goal','Goal: Max Sustainable Spend',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},'Find the highest Golden spend that leaves your target balance at age '+state.endAge+'.'));
+    d.appendChild(tog(state.goal.enabled?'Goal solver: ON':'Goal solver: OFF',state.goal.enabled,function(){state.goal.enabled=!state.goal.enabled;render();}));
+    d.appendChild(sld('Target balance at '+state.endAge,0,2000000,50000,state.goal.targetBalance,fmt(state.goal.targetBalance),function(v){state.goal.targetBalance=v;render();}));
+    if(state.goal.enabled){
+      var maxSpend=solveMaxSpend(state.goal.targetBalance);
+      var col=maxSpend>=state.spendGolden?'#5dd87a':'#f0b96c';
+      d.appendChild(el('div',{style:{marginTop:'8px',padding:'10px',background:'#0a0c12',borderRadius:'8px'}},[
+        el('div',{style:{fontSize:'11px',color:'#7a8099'}},'Max sustainable Golden spend:'),
+        el('div',{style:{fontSize:'22px',fontWeight:'900',color:col,marginTop:'3px'}},fmt(maxSpend)),
+        el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'2px'}},
+          maxSpend>=state.spendGolden?'▲ Above current spend of '+fmt(state.spendGolden):'▼ Below current spend of '+fmt(state.spendGolden))
+      ]));
+    }
+    return d;
+  }));
+
   ctrl.appendChild(collSec('pension','Age Pension',function(){
     var d=el('div',{});
     d.appendChild(tog(state.usePension?'Age Pension: ON':'Age Pension: OFF',state.usePension,function(){state.usePension=!state.usePension;render();}));
@@ -835,6 +1173,8 @@ function render(){
     d.appendChild(numI('Asset threshold ($)',state.assetThreshold,function(v){state.assetThreshold=v;render();},{step:1000,min:0}));
     d.appendChild(sld('Taper rate (¢/$ over threshold)',0.05,0.15,0.001,state.assetTaperPerDollar,(state.assetTaperPerDollar*100).toFixed(1)+'¢',function(v){state.assetTaperPerDollar=v;render();}));
     d.appendChild(sld('Income free area',5000,20000,500,state.incomeFreeArea,fmt(state.incomeFreeArea),function(v){state.incomeFreeArea=v;render();}));
+    d.appendChild(tog(state.minDrawdown.enabled?'Min drawdown rules: ON (ATO)':'Min drawdown rules: OFF',state.minDrawdown.enabled,function(){state.minDrawdown.enabled=!state.minDrawdown.enabled;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'3px'}},'4% at 60–64 · 5% at 65–74 · 6% at 75–79 · 7% at 80–84 · 9% at 85–89 · 14% at 90+'));
     return d;
   }));
 
@@ -872,7 +1212,9 @@ function render(){
       cards.appendChild(card('Lump sum events',String(state.lumpSums.length)+' event'+(state.lumpSums.length>1?'s':''),'+'+fmt(totalIn)+' in · '+fmt(totalOut)+' out','#f0b96c'));
     }
     rightCol.appendChild(panel('Key Results',cards));
-    rightCol.appendChild(panel('Balance Over Time',balanceChart(rows,rowsB,rowsShock)));
+    rightCol.appendChild(panel('Balance Over Time',balanceChart(rows,rowsB,rowsShock,mcRows)));
+    var isc=incomeStackChart(rows);if(isc)rightCol.appendChild(panel('Income Sources',isc));
+    var nwc=netWorthChart(nwRows);if(nwc)rightCol.appendChild(panel('Net Worth (Super + Home + Other)',nwc));
 
     // Timeline table
     var hasLS=rows.some(function(r){return r.lsItems&&r.lsItems.length>0;});
@@ -899,6 +1241,7 @@ function render(){
       return cells;
     });
     var tblTitle='Timeline'+(state.showInflationAdj?' (★ = today\'s $)':'')+(state.showAllRows?'':' (first 50 rows)');
+    rightCol.appendChild(panel('Sensitivity: Balance at Age '+state.endAge,sensitivityTable()));
     rightCol.appendChild(panel(tblTitle,el('div',{},[
       mkTbl(tblHeaders,tblRows),
       el('button',{style:{marginTop:'8px',padding:'5px 12px',borderRadius:'7px',border:'1px solid #252a3a',
@@ -971,7 +1314,7 @@ function render(){
         ['Fund exhaustion',exh?'Age '+exh.age:'None',exhB?'Age '+exhB.age:'None']
       ];
       rightCol.appendChild(panel('A vs B Comparison',mkTbl(['Metric','Scenario A','Scenario B'],cmp)));
-      rightCol.appendChild(panel('Chart Comparison',balanceChart(rows,rowsB,rowsShock)));
+      rightCol.appendChild(panel('Chart Comparison',balanceChart(rows,rowsB,rowsShock,mcRows)));
     }
   }
 }
