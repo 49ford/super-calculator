@@ -313,7 +313,7 @@ function buildTimeline(st,returnOverrideFn){
       else{tSpend=Math.min(tBal,netSpend);}
     }
     // ── Minimum drawdown enforcement (ATO) ──────────────────────────────────
-    if(st.minDrawdown&&st.minDrawdown.enabled){
+    if(st.minDrawdown&&st.minDrawdown.enabled&&yIdx>=0){
       var mdRate=minDrawdownRate(age);
       if(!rWork){var robMD=rBal*mdRate;if(robMD>rSpend)rSpend=Math.min(rBal,robMD);}
       if(!tWork){var tinaMD=tBal*mdRate;if(tinaMD>tSpend)tSpend=Math.min(tBal,tinaMD);}
