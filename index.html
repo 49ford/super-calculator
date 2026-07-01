@@ -481,9 +481,20 @@ function solveMaxSpend(targetBalance){
     var mid=(lo+hi)/2;
     var ratio=mid/Math.max(1,state.spendGolden);
     var st2=Object.assign({},state,{spendGolden:mid,spendSilver:state.spendSilver*ratio,spendLegacy:state.spendLegacy*ratio});
-    var last=buildTimeline(st2).filter(function(r){return r.phase==='FORECAST';});
-    last=last[last.length-1];
-    if(last&&last.combinedClose>=targetBalance)lo=mid;else hi=mid;
+    var fRows=buildTimeline(st2).filter(function(r){return r.phase==='FORECAST';});
+    var last=fRows[fRows.length-1];
+    // Bug fix: checking only the final row's balance isn't enough. Once a
+    // balance hits 0 it stays floored there (see buildDrawdown/buildTimeline),
+    // so a spend level that exhausts funds at, say, age 70 looks identical —
+    // at age 90 — to a spend level that lasts exactly to age 90 with nothing
+    // left. Both satisfied "final balance >= targetBalance" whenever
+    // targetBalance was 0, which let the binary search climb all the way to
+    // its $2,000,000 upper bound and report that as "sustainable." Now we
+    // also require that funds were never exhausted before the final
+    // projection year.
+    var exhaustedEarly=fRows.some(function(r,idx){return idx<fRows.length-1&&r.combinedClose<=0;});
+    var ok=!exhaustedEarly&&last&&last.combinedClose>=targetBalance;
+    if(ok)lo=mid;else hi=mid;
   }
   return Math.round(lo/1000)*1000;
 }
