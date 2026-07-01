@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Superannuation Calculator V10</title>
+<title>Superannuation Calculator V11</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-serif}
@@ -58,8 +58,17 @@ button{font-family:'DM Sans','Segoe UI',sans-serif}
 function showFatal(msg,err){
   console.error(msg,err||'');
   var r=document.getElementById('root');
-  if(r)r.innerHTML='<div style="padding:32px;background:#0f1117;color:#f06c6c;font-family:monospace"><h2>V8 Error</h2><pre style="color:#f0b96c;margin-top:12px;white-space:pre-wrap">'+msg+'</pre></div>';
+  if(r)r.innerHTML='<div style="padding:32px;background:#0f1117;color:#f06c6c;font-family:monospace"><h2>V11 Error</h2><pre style="color:#f0b96c;margin-top:12px;white-space:pre-wrap">'+esc(msg)+'</pre></div>';
 }
+// ─── HTML escaping (prevents user-entered text, e.g. lump-sum labels, from
+// being interpreted as markup when we build innerHTML strings) ─────────────
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+// Coerce a raw input value to a finite number, falling back if invalid.
+function numOr(v,fallback){var n=+v;return isFinite(n)?n:(fallback||0);}
 try{
 
 // ─── Pension engine ────────────────────────────────────────────────────────
@@ -84,7 +93,38 @@ var ACTUALS=[
 ];
 var FINAL_ACTUAL_CLOSE={rob:829122.86,tina:658880};
 var HORIZON=41;
-function ccForAge(age,caps){return age===54?caps.at54:age>54?caps.after54:0;}
+// BASE_AGE = "this year" (FY2026-27) — the anchor every indexed figure (caps,
+// pension thresholds, TBC, CPI-escalated spend) grows forward from.
+var BASE_AGE=54;
+// Concessional cap for a given projection age. age===54 uses the FY25-26 cap
+// (their actual last-known contribution year), age 55+ uses the confirmed
+// FY26-27 cap ($32,500), then escalates in $2,500 AWOTE-style steps if
+// indexation is enabled. NCC annual cap is legislated as 4× this figure.
+function ccCapForAge(age,st){
+  if(age===54)return st.caps.at54;
+  if(age<54)return 0;
+  var base=st.caps.after54;
+  if(!st.indexation||!st.indexation.enabled)return base;
+  var grown=base*Math.pow(1+st.inflationRate,Math.max(0,age-55));
+  return Math.max(base,Math.floor(grown/2500)*2500);
+}
+function nccCapForAge(age,st){return ccCapForAge(age,st)*4;}
+// General Transfer Balance Cap for a given projection age. $2.1m is the
+// confirmed 1 July 2026 figure; escalates in $100k steps (CPI-style
+// approximation of the real indexation mechanism) if enabled.
+function tbcCapForAge(age,st){
+  var base=(st.tbc&&st.tbc.cap)||2100000;
+  if(!st.indexation||!st.indexation.enabled)return base;
+  var grown=base*Math.pow(1+st.inflationRate,Math.max(0,age-BASE_AGE));
+  return Math.max(base,Math.round(grown/100000)*100000);
+}
+// Generic indexation helper for Age Pension thresholds/rates and Div293
+// threshold-adjacent figures. Div293's $250k threshold is NOT indexed by law,
+// so callers simply don't route it through this function.
+function idx(v,age,st){
+  if(!st.indexation||!st.indexation.enabled)return v;
+  return v*Math.pow(1+st.inflationRate,Math.max(0,age-BASE_AGE));
+}
 function thirdSize(){return Math.ceil(HORIZON/3);}
 function stageIdx(i){var t=thirdSize();return i<t?0:i<t*2?1:2;}
 function stageName(s){return['Golden','Silver','Legacy'][s];}
@@ -119,18 +159,37 @@ function defaultState(){
     otherIncomeStartAge:60,
     usePension:true,
     homeowner:true,
-    fullPension:44855,
-    assetThreshold:470000,
+    // Age Pension figures: 20 Mar 2026 – 19 Sep 2026 Services Australia rates
+    // (combined couple, homeowner). Auto-escalate via `indexation` below.
+    fullPension:47070,
+    assetThreshold:481500,
     assetTaperPerDollar:0.078,
-    deemingThreshold:100000,
-    deemingRateLow:0.0025,
-    deemingRateHigh:0.0225,
-    incomeFreeArea:9000,
+    deemingThreshold:106200,
+    deemingRateLow:0.0125,
+    deemingRateHigh:0.0325,
+    incomeFreeArea:9880,
     incomeTaperRate:0.5,
     showInflationAdj:false,
     inflationRate:0.035,
     showScenarioB:false,
+    // Concessional cap: $30,000 at age 54 (their actual FY25-26 cap),
+    // $32,500 from age 55+ (confirmed FY26-27 cap). Escalates further via
+    // `indexation`. NCC annual cap is derived as 4× this (currently $130,000).
     caps:{at54:30000,after54:32500},
+    // Division 293: extra 15% tax on concessional contributions when
+    // (income + CC) exceeds the threshold. The $250k threshold is fixed by
+    // law (unindexed since 2017). Off by default — needs each person's
+    // taxable income, which this tool doesn't otherwise track.
+    div293:{enabled:false,threshold:250000,robIncome:0,tinaIncome:0},
+    // General Transfer Balance Cap: $2.1m from 1 July 2026. Balance held
+    // above this per person must stay in accumulation phase (earnings taxed
+    // at 15%, not the pension-phase 0% this model otherwise assumes).
+    tbc:{enabled:true,cap:2100000},
+    // Escalates concessional/NCC/TBC caps and Age Pension thresholds each
+    // projection year at the CPI rate below, and grows nominal spend figures
+    // the same way, so the model stays realistic decades out instead of
+    // freezing today's law forever.
+    indexation:{enabled:true},
     scenarioB:{
       robWorkReturn:0.08,tinaWorkReturn:0.08,retireReturn:0.06,
       robRetireAge:62,tinaRetireAge:62,
@@ -145,23 +204,38 @@ function defaultState(){
     monteCarlo:{enabled:false,runs:300,stdDev:10},
     goal:{enabled:false,targetBalance:500000},
     netWorth:{homeValue:1500000,homeCpi:0.04},
-    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true}
+    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true}
   };
 }
 
 // ─── localStorage ──────────────────────────────────────────────────────────
-var LS_KEY='supercalc_v10_state';
+var LS_KEY='supercalc_v11_state';
+// Fields whose "correct" value is set by law/indexation, not personal
+// preference. When migrating from an older save, we drop these so the user
+// inherits the freshly-corrected defaults above instead of carrying forward
+// whatever was stale in their old browser storage. Fields the user is meant
+// to tweak (concessional caps, retirement ages, spend, etc.) are preserved.
+var REGULATORY_KEYS=['fullPension','assetThreshold','assetTaperPerDollar',
+  'deemingThreshold','deemingRateLow','deemingRateHigh','incomeFreeArea','incomeTaperRate'];
+function stripRegulatoryDefaults(s){
+  var out=Object.assign({},s);
+  REGULATORY_KEYS.forEach(function(k){delete out[k];});
+  return out;
+}
 function loadState(){
   try{
     var raw=localStorage.getItem(LS_KEY);
     if(!raw){
-      // Migrate from v7 if present
-      var v9=localStorage.getItem('supercalc_v9_state');
-      if(v9){var s=JSON.parse(v9);delete s.tab;return deepMerge(defaultState(),s);}
-      var v8=localStorage.getItem('supercalc_v8_state');
-      if(v8){var s=JSON.parse(v8);delete s.tab;return deepMerge(defaultState(),s);}
-      var v7=localStorage.getItem('supercalc_v7_state');
-      if(v7){var s2=JSON.parse(v7);delete s2.tab;return deepMerge(defaultState(),s2);}
+      var prevKeys=['supercalc_v10_state','supercalc_v9_state','supercalc_v8_state','supercalc_v7_state'];
+      for(var i=0;i<prevKeys.length;i++){
+        var old=localStorage.getItem(prevKeys[i]);
+        if(old){
+          try{
+            var s=JSON.parse(old);delete s.tab;
+            return deepMerge(defaultState(),stripRegulatoryDefaults(s));
+          }catch(e2){/* fall through to next key */}
+        }
+      }
       return defaultState();
     }
     return deepMerge(defaultState(),JSON.parse(raw));
@@ -244,13 +318,24 @@ function buildTimeline(st,returnOverrideFn){
   var rBal=st.robSeed,tBal=st.tinaSeed;
   var earliestRetire=Math.min(st.robRetireAge,st.tinaRetireAge);
   var totalOther=otherTotal();
+  var robOverTBC=false,tinaOverTBC=false; // set once either balance first exceeds the TBC in pension phase
   for(var age=54;age<=st.endAge;age++){
     var rWork=age<st.robRetireAge,tWork=age<st.tinaRetireAge;
-    var rCC=rWork?ccForAge(age,st.caps):0;
-    var tCC=tWork?ccForAge(age,st.caps):0;
+    var rCC=rWork?ccCapForAge(age,st):0;
+    var tCC=tWork?ccCapForAge(age,st):0;
+    // Division 293: extra 15% tax on concessional contributions when
+    // (income + CC) exceeds the (unindexed) threshold. Applied on top of the
+    // normal 15% contributions tax, so total tax on the excess is 30%.
+    var rDiv293=0,tDiv293=0;
+    if(st.div293&&st.div293.enabled){
+      var rSurchargeIncome=(st.div293.robIncome||0)+rCC;
+      rDiv293=Math.min(rCC,Math.max(0,rSurchargeIncome-st.div293.threshold))*0.15;
+      var tSurchargeIncome=(st.div293.tinaIncome||0)+tCC;
+      tDiv293=Math.min(tCC,Math.max(0,tSurchargeIncome-st.div293.threshold))*0.15;
+    }
     // Accumulation returns
-    if(rWork){var nr=rCC*(1-st.contribTax),br=rBal+nr;rBal=br+br*st.robWorkReturn;}
-    if(tWork){var nt=tCC*(1-st.contribTax),bt=tBal+nt;tBal=bt+bt*st.tinaWorkReturn;}
+    if(rWork){var nr=rCC*(1-st.contribTax)-rDiv293,br=rBal+nr;rBal=br+br*st.robWorkReturn;}
+    if(tWork){var nt=tCC*(1-st.contribTax)-tDiv293,bt=tBal+nt;tBal=bt+bt*st.tinaWorkReturn;}
     // Non-concessional contributions (no tax, any phase)
     var robNCC=0,tinaNCC=0;
     if(st.ncc&&st.ncc.enabled&&age>=st.ncc.startAge&&age<=st.ncc.endAge){
@@ -260,10 +345,22 @@ function buildTimeline(st,returnOverrideFn){
     var anyRet=!rWork||!tWork,bothRet=!rWork&&!tWork;
     var yIdx=(anyRet&&age>earliestRetire)?(age-earliestRetire-1):-1;
     var stage=yIdx>=0?stageName(stageIdx(yIdx)):(anyRet&&age===earliestRetire?'Retiring':'');
-    // Retirement returns (+ optional pension-phase tax boost)
+    // Retirement returns (+ optional pension-phase tax boost).
+    // Transfer Balance Cap: any balance above the (indexed) cap can't sit in
+    // the tax-free pension phase — it's modelled as remaining in
+    // accumulation, so its earnings are taxed at 15% instead of 0%.
     var pb=st.pensionBoost&&st.pensionBoost.enabled?st.pensionBoost.rate||0.012:0;
-    if(!rWork){var rr=(returnOverrideFn?returnOverrideFn(age):st.retireReturn)+pb;rBal=rBal+rBal*rr;}
-    if(!tWork){var rt=(returnOverrideFn?returnOverrideFn(age):st.retireReturn)+pb;tBal=tBal+tBal*rt;}
+    var tbcCap=st.tbc&&st.tbc.enabled?tbcCapForAge(age,st):Infinity;
+    if(!rWork){
+      var rr=(returnOverrideFn?returnOverrideFn(age):st.retireReturn)+pb;
+      if(rBal>tbcCap){robOverTBC=true;var rPension=tbcCap,rAccum=rBal-tbcCap;rBal=rBal+rPension*rr+rAccum*rr*(1-0.15);}
+      else{rBal=rBal+rBal*rr;}
+    }
+    if(!tWork){
+      var rt=(returnOverrideFn?returnOverrideFn(age):st.retireReturn)+pb;
+      if(tBal>tbcCap){tinaOverTBC=true;var tPension=tbcCap,tAccum=tBal-tbcCap;tBal=tBal+tPension*rt+tAccum*rt*(1-0.15);}
+      else{tBal=tBal+tBal*rt;}
+    }
     // ── Lump sums applied after returns ────────────────────────────────────
     var lsRob=0,lsTina=0,lsItems=[];
     (st.lumpSums||[]).forEach(function(ls){
@@ -283,14 +380,16 @@ function buildTimeline(st,returnOverrideFn){
       otherIncome=totalOther*st.otherAssetsReturn*Math.pow(1+st.otherAssetsCpi,age-st.otherIncomeStartAge-1);
     }
     // ── Age pension ─────────────────────────────────────────────────────────
+    // Pension thresholds/rates are indexed forward from today (BASE_AGE) so a
+    // 40-year projection doesn't apply 2026 settings unchanged out to age 90.
     var pension=0;
     if(st.usePension&&anyRet&&age>=67){
       pension=estimateAgePension({
         financialAssets:rBal+tBal+totalOther,homeowner:st.homeowner,
-        fullPension:st.fullPension,assetThreshold:st.assetThreshold,
-        assetTaperPerDollar:st.assetTaperPerDollar,deemingThreshold:st.deemingThreshold,
+        fullPension:idx(st.fullPension,age,st),assetThreshold:idx(st.assetThreshold,age,st),
+        assetTaperPerDollar:st.assetTaperPerDollar,deemingThreshold:idx(st.deemingThreshold,age,st),
         deemingRateLow:st.deemingRateLow,deemingRateHigh:st.deemingRateHigh,
-        incomeFreeArea:st.incomeFreeArea,incomeTaperRate:st.incomeTaperRate
+        incomeFreeArea:idx(st.incomeFreeArea,age,st),incomeTaperRate:st.incomeTaperRate
       });
     }
     // ── Part-time / phased retirement income ────────────────────────────────
@@ -300,7 +399,12 @@ function buildTimeline(st,returnOverrideFn){
       if(age>st.tinaRetireAge&&age<=st.partTime.tinaEndAge)ptIncome+=st.partTime.tinaAmount||0;
     }
     // ── Spend ────────────────────────────────────────────────────────────────
-    var grossSpend=yIdx>=0?(yIdx<thirdSize()?st.spendGolden:yIdx<thirdSize()*2?st.spendSilver:st.spendLegacy):0;
+    // Golden/Silver/Legacy sliders are treated as today's dollars and grown
+    // to nominal terms at the CPI rate (consistent with the pension/cap
+    // indexation above), so the "Real $" display toggle reverses a matching
+    // escalation rather than un-inflating a figure that never grew.
+    var baseSpend=yIdx>=0?(yIdx<thirdSize()?st.spendGolden:yIdx<thirdSize()*2?st.spendSilver:st.spendLegacy):0;
+    var grossSpend=baseSpend>0?idx(baseSpend,age,st):0;
     var netSpend=Math.max(0,grossSpend-pension-otherIncome-ptIncome);
     var rSpend=0,tSpend=0;
     if(netSpend>0){
@@ -323,7 +427,8 @@ function buildTimeline(st,returnOverrideFn){
     rows.push({age,phase:'FORECAST',stage,
       robClose:rBal,tinaClose:tBal,combinedClose:rBal+tBal,
       grossSpend,otherIncome,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
-      robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,lsRob,lsTina,lsItems});
+      robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,rDiv293,tDiv293,
+      robOverTBC,tinaOverTBC,tbcCap:isFinite(tbcCap)?tbcCap:null,lsRob,lsTina,lsItems});
   }
   var startAge=st.showActuals?48:54;
   return rows.filter(function(r){return r.age>=startAge;});
@@ -445,14 +550,20 @@ function sld(label,min,max,step,val,disp,fn){
       el('div',{style:{fontSize:'12px',color:'#6c8ef0',fontFamily:'monospace'}},disp)
     ]),
     el('input',{type:'range',min:String(min),max:String(max),step:String(step),value:String(val),
-      style:{width:'100%'},onInput:function(e){fn(+e.target.value);}})
+      style:{width:'100%'},onInput:function(e){fn(numOr(e.target.value,min));}})
   ]);
 }
 function numI(label,val,fn,opts){
   opts=opts||{};
   var inp=el('input',{type:'number',value:String(val),step:String(opts.step||1),
     min:String(opts.min||0),style:{width:'100%'}});
-  inp.addEventListener('change',function(e){fn(+e.target.value);});
+  // Guard against NaN from empty/invalid input (e.g. user clears the field
+  // or types a non-numeric value) silently propagating into the model.
+  inp.addEventListener('change',function(e){
+    var v=numOr(e.target.value,opts.min||0);
+    inp.value=String(v);
+    fn(v);
+  });
   return el('div',{style:{margin:'5px 0'}},[
     el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',marginBottom:'2px'}},label),
     inp]);
@@ -643,9 +754,9 @@ function lumpSumEditor(){
 
   var row1=el('div',{style:{display:'flex',gap:'6px',marginBottom:'6px'}});
   var ageInp=el('input',{type:'number',placeholder:'Age',value:String(lsForm.age),min:'54',max:'100',step:'1',style:{width:'60px'}});
-  ageInp.addEventListener('change',function(e){lsForm.age=+e.target.value;});
+  ageInp.addEventListener('change',function(e){lsForm.age=numOr(e.target.value,60);ageInp.value=String(lsForm.age);});
   var amtInp=el('input',{type:'number',placeholder:'Amount $',value:String(lsForm.amount),min:'0',step:'10000',style:{flex:'1'}});
-  amtInp.addEventListener('change',function(e){lsForm.amount=+e.target.value;});
+  amtInp.addEventListener('change',function(e){lsForm.amount=numOr(e.target.value,0);amtInp.value=String(lsForm.amount);});
   row1.appendChild(el('div',{style:{display:'flex',flexDirection:'column',gap:'2px'}},[
     el('div',{style:{fontSize:'10px',color:'#5a6080'}},'Age'),ageInp]));
   row1.appendChild(el('div',{style:{display:'flex',flexDirection:'column',gap:'2px',flex:'1'}},[
@@ -876,14 +987,16 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
   svg.appendChild(cursor);
   var tip=document.getElementById('chart-tooltip');
 
-  svg.addEventListener('mousemove',function(e){
+  // Shared by mouse and touch input so the tooltip works on tablets/phones,
+  // not just with a mouse hovering the SVG.
+  function showTooltip(clientX,clientY){
     var rect=svg.getBoundingClientRect();
-    var svgX=(e.clientX-rect.left)/rect.width*W;
+    var svgX=(clientX-rect.left)/rect.width*W;
     var ageF=xMin+((svgX-pL)/(W-pL-pR))*(xMax-xMin);
     var age=Math.round(ageF);
-    if(age<xMin||age>xMax){tip.style.display='none';cursor.setAttribute('display','none');return;}
+    if(age<xMin||age>xMax){hideTooltip();return;}
     var row=rows.filter(function(r){return r.age===age;})[0];
-    if(!row){tip.style.display='none';cursor.setAttribute('display','none');return;}
+    if(!row){hideTooltip();return;}
     cursor.setAttribute('x1',String(xp(age)));cursor.setAttribute('x2',String(xp(age)));cursor.setAttribute('display','');
     var h='<div style="font-weight:900;margin-bottom:6px;color:#e8eaf0">Age '+age+(row.phase==='ACTUAL'?' <span style="font-size:10px;color:#5dd87a">ACTUAL</span>':'')+'</div>';
     h+='<div style="color:#6c8ef0">Rob: '+fmt(row.robClose)+'</div>';
@@ -896,7 +1009,7 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
       row.lsItems.forEach(function(ls){
         var sign=ls.type==='outflow'?'-':'+';
         var col=ls.type==='outflow'?'#f06c6c':'#5dd87a';
-        h+='<div style="color:'+col+'">'+ls.label+': '+sign+fmt(ls.amount)+'</div>';
+        h+='<div style="color:'+col+'">'+esc(ls.label)+': '+sign+fmt(ls.amount)+'</div>';
       });
       h+='</div>';
     }
@@ -904,9 +1017,22 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
     if(mcRows){var mc=mcRows.filter(function(r){return r.age===age;})[0];if(mc){h+='<div style="color:rgba(93,216,122,0.8);margin-top:4px;font-size:11px">MC p10–p90: '+fmt(mc.p10)+' → '+fmt(mc.p90)+'</div>';}}
     if(rowsShock){var rs=rowsShock.filter(function(r){return r.age===age;})[0];if(rs){var sc=state.shock.type==='crash'?'#f06c6c':'#00e5cc';var diff=rs.combinedClose-row.combinedClose;var diffStr=(diff>=0?'+':'')+fmt(Math.abs(diff));h+='<div style="color:'+sc+';margin-top:4px">Shock Combined: '+fmt(rs.combinedClose)+'<br><span style="font-size:10px;opacity:.8">Impact: '+diffStr+'</span></div>';}}
     tip.innerHTML=h;tip.style.display='block';
-    tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-20)+'px';
-  });
-  svg.addEventListener('mouseleave',function(){tip.style.display='none';cursor.setAttribute('display','none');});
+    tip.style.left=(clientX+14)+'px';tip.style.top=(clientY-20)+'px';
+  }
+  function hideTooltip(){tip.style.display='none';cursor.setAttribute('display','none');}
+
+  svg.addEventListener('mousemove',function(e){showTooltip(e.clientX,e.clientY);});
+  svg.addEventListener('mouseleave',hideTooltip);
+  // Touch support: tap-and-drag shows the tooltip at the touch point;
+  // lifting the finger hides it, mirroring mouseleave.
+  svg.addEventListener('touchstart',function(e){
+    if(e.touches&&e.touches.length){e.preventDefault();showTooltip(e.touches[0].clientX,e.touches[0].clientY);}
+  },{passive:false});
+  svg.addEventListener('touchmove',function(e){
+    if(e.touches&&e.touches.length){e.preventDefault();showTooltip(e.touches[0].clientX,e.touches[0].clientY);}
+  },{passive:false});
+  svg.addEventListener('touchend',hideTooltip);
+  svg.addEventListener('touchcancel',hideTooltip);
   return svg;
 }
 
@@ -921,13 +1047,26 @@ function narrative(rows){
   var oi=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
   var ls=state.lumpSums;
   var lines=[];
-  lines.push('<strong>Retirement Outlook — V8 Summary</strong><br><br>');
+  lines.push('<strong>Retirement Outlook — V11 Summary</strong><br><br>');
   lines.push('Rob retires at <strong>age '+state.robRetireAge+'</strong> and Tina at <strong>age '+state.tinaRetireAge+'</strong>, with a combined super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at earliest retirement (Rob '+fmt(aR.robClose)+' | Tina '+fmt(aR.tinaClose)+').<br><br>');
-  lines.push('Spending is phased: <strong>Golden '+fmt(state.spendGolden)+'</strong> / <strong>Silver '+fmt(state.spendSilver)+'</strong> / <strong>Legacy '+fmt(state.spendLegacy)+'</strong> per year gross. Drawdown is met first from other-asset income, then Age Pension, with the remainder from super.<br><br>');
+  if(state.robRetireAge<60||state.tinaRetireAge<60){
+    lines.push('⚠️ <strong>Below preservation age:</strong> '+(state.robRetireAge<60?'Rob\'s':'')+(state.robRetireAge<60&&state.tinaRetireAge<60?' and ':'')+(state.tinaRetireAge<60?'Tina\'s':'')+' planned retirement age is under the general preservation age of 60 — early access to super requires meeting a condition of release.<br><br>');
+  }
+  lines.push('Spending is phased: <strong>Golden '+fmt(state.spendGolden)+'</strong> / <strong>Silver '+fmt(state.spendSilver)+'</strong> / <strong>Legacy '+fmt(state.spendLegacy)+'</strong> per year gross, in today\'s dollars'+(state.indexation&&state.indexation.enabled?' (escalated at '+fmtPct(state.inflationRate)+' CPI in the projection)':'')+'. Drawdown is met first from other-asset income, then Age Pension, with the remainder from super.<br><br>');
   if(tot>0&&oi){lines.push('Other assets total <strong>'+fmt(tot)+'</strong>, generating <strong>'+fmt(oi.otherIncome)+'</strong>/yr from age '+(state.otherIncomeStartAge+1)+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI '+fmtPct(state.otherAssetsCpi)+' p.a.).<br><br>');}
   if(state.usePension&&a67){
     if(a67.pension>0){lines.push('Age Pension estimated at <strong>'+fmt(a67.pension)+'</strong>/yr from age 67.<br><br>');}
     else{lines.push('No Age Pension payable at age 67 — assets exceed threshold. May improve as balances drawdown.<br><br>');}
+  }
+  if(state.div293&&state.div293.enabled){
+    var rDiv293Tot2=rows.filter(function(r){return r.phase==='FORECAST';}).reduce(function(s,r){return s+(r.rDiv293||0);},0);
+    var tDiv293Tot2=rows.filter(function(r){return r.phase==='FORECAST';}).reduce(function(s,r){return s+(r.tDiv293||0);},0);
+    if(rDiv293Tot2+tDiv293Tot2>0){lines.push('💰 <strong>Division 293 tax modelled:</strong> an extra 15% applies to concessional contributions once income + CC exceeds '+fmt(state.div293.threshold)+'. Lifetime estimate: <strong>'+fmt(rDiv293Tot2+tDiv293Tot2)+'</strong> (Rob '+fmt(rDiv293Tot2)+' | Tina '+fmt(tDiv293Tot2)+').<br><br>');}
+  }
+  if(state.tbc&&state.tbc.enabled){
+    var robTBCRow2=rows.filter(function(r){return r.phase==='FORECAST'&&r.robOverTBC;})[0];
+    var tinaTBCRow2=rows.filter(function(r){return r.phase==='FORECAST'&&r.tinaOverTBC;})[0];
+    if(robTBCRow2||tinaTBCRow2){lines.push('🏦 <strong>Transfer Balance Cap:</strong> '+(robTBCRow2?'Rob\'s balance exceeds the cap from age '+robTBCRow2.age+'. ':'')+(tinaTBCRow2?'Tina\'s balance exceeds the cap from age '+tinaTBCRow2.age+'. ':'')+'The excess is modelled as remaining in accumulation phase, taxed at 15% on earnings rather than the pension-phase 0%.<br><br>');}
   }
   if(state.shock&&state.shock.enabled){
     var sRows2=buildShockTimeline();
@@ -941,13 +1080,13 @@ function narrative(rows){
     lines.push('<strong>Lump sum events modelled:</strong><br>');
     ls.forEach(function(e){
       var sign=e.type==='outflow'?'-':'+';
-      lines.push('• Age '+e.age+': <strong>'+e.label+'</strong> '+sign+fmt(e.amount)+' ('+e.who+(e.downsizer?', downsizer':'')+')<br>');
+      lines.push('• Age '+e.age+': <strong>'+esc(e.label)+'</strong> '+sign+fmt(e.amount)+' ('+esc(e.who)+(e.downsizer?', downsizer':'')+')<br>');
     });
     lines.push('<br>');
   }
   if(exh){lines.push('⚠️ <strong>Funds exhausted at age '+exh.age+'.</strong> Reduce spending, increase returns, or add inflows.<br><br>');}
   else{lines.push('✅ <strong>Funds last to age '+state.endAge+'</strong> with <strong>'+fmt(a90.combinedClose)+'</strong> remaining (Rob '+fmt(a90.robClose)+' | Tina '+fmt(a90.tinaClose)+').<br><br>');}
-  lines.push('<em>Returns: Rob '+fmtPct(state.robWorkReturn)+' / Tina '+fmtPct(state.tinaWorkReturn)+' (work), '+fmtPct(state.retireReturn)+' (retirement). CC: $'+state.caps.at54.toLocaleString()+' (age 54), $'+state.caps.after54.toLocaleString()+' (55+). Tax '+fmtPct(state.contribTax)+'. All figures nominal.</em>');
+  lines.push('<em>Returns: Rob '+fmtPct(state.robWorkReturn)+' / Tina '+fmtPct(state.tinaWorkReturn)+' (work), '+fmtPct(state.retireReturn)+' (retirement). CC: $'+state.caps.at54.toLocaleString()+' (age 54), $'+state.caps.after54.toLocaleString()+' (55+, escalating). Tax '+fmtPct(state.contribTax)+'. Figures nominal unless "Real $" is on; spend and pension/cap thresholds escalate at '+fmtPct(state.inflationRate)+' CPI when indexation is on.</em>');
   return lines.join('');
 }
 
@@ -956,16 +1095,47 @@ var root=document.getElementById('root');
 root.innerHTML='';
 root.style.cssText='height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#0f1117;color:#e8eaf0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
 
+var importInp=el('input',{type:'file',accept:'application/json',style:{display:'none'}});
+importInp.addEventListener('change',function(e){
+  var file=e.target.files&&e.target.files[0];
+  if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(){
+    try{
+      var imported=JSON.parse(String(reader.result));
+      var tabKeep=state.tab;
+      Object.assign(state,deepMerge(defaultState(),imported));
+      state.tab=tabKeep;
+      render();
+    }catch(err){alert('Could not import that file — it doesn\'t look like a valid Super Calculator export.');}
+  };
+  reader.readAsText(file);
+  importInp.value='';
+});
+
+function downloadBlob(text,mime,filename){
+  var blob=new Blob([text],{type:mime});
+  var url=URL.createObjectURL(blob);
+  var a=el('a',{href:url,download:filename,style:{display:'none'}});
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},0);
+}
+
 var header=el('div',{style:{padding:'12px 20px',background:'#161923',borderBottom:'1px solid #252a3a',display:'flex',justifyContent:'space-between',alignItems:'center'}},[
   el('div',{},[
-    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V10 | SUPER CALCULATOR'),
+    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V11 | SUPER CALCULATOR'),
     el('div',{style:{fontSize:'20px',fontWeight:'900',marginTop:'2px'}},'Superannuation Calculator'),
-    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'V10 · Monte Carlo · Min drawdown · NCC · Part-time · Net worth · Goal solver')
+    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'V11 · Monte Carlo · Min drawdown · NCC · Part-time · Div 293 · TBC · Indexation · Net worth · Goal solver')
   ]),
   el('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}},[
     el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},onClick:function(){window.print();}}, '🖨 Print'),
+    el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},
+      onClick:function(){downloadBlob(JSON.stringify(state,null,2),'application/json','super-calculator-scenario-'+new Date().toISOString().slice(0,10)+'.json');}}, '⬇ Export'),
+    el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},
+      onClick:function(){importInp.click();}}, '⬆ Import'),
     el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},onClick:function(){if(confirm('Reset all settings to defaults?'))resetState();}}, '↺ Reset'),
-    el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid rgba(93,216,122,.4)',background:'rgba(93,216,122,.07)',color:'#5dd87a',cursor:'pointer',fontSize:'11px'},onClick:function(){saveState();var b=this;b.textContent='✓ Saved';setTimeout(function(){b.textContent='💾 Save';},1200);}}, '💾 Save')
+    el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid rgba(93,216,122,.4)',background:'rgba(93,216,122,.07)',color:'#5dd87a',cursor:'pointer',fontSize:'11px'},onClick:function(){saveState();var b=this;b.textContent='✓ Saved';setTimeout(function(){b.textContent='💾 Save';},1200);}}, '💾 Save'),
+    importInp
   ])
 ]);
 
@@ -1037,7 +1207,9 @@ function render(){
   ctrl.appendChild(collSec('retirement','Retirement Ages',function(){
     var d=el('div',{});
     d.appendChild(sld('Rob retires at',55,70,1,state.robRetireAge,String(state.robRetireAge),function(v){state.robRetireAge=v;render();}));
+    if(state.robRetireAge<60)d.appendChild(el('div',{style:{fontSize:'10px',color:'#f0b96c',marginTop:'-4px',marginBottom:'6px'}},'⚠ Below preservation age (60) — early access requires a condition of release.'));
     d.appendChild(sld('Tina retires at',55,70,1,state.tinaRetireAge,String(state.tinaRetireAge),function(v){state.tinaRetireAge=v;render();}));
+    if(state.tinaRetireAge<60)d.appendChild(el('div',{style:{fontSize:'10px',color:'#f0b96c',marginTop:'-4px',marginBottom:'6px'}},'⚠ Below preservation age (60) — early access requires a condition of release.'));
     d.appendChild(sld('Horizon (end age)',70,100,1,state.endAge,String(state.endAge),function(v){state.endAge=v;render();}));
     return d;
   }));
@@ -1052,7 +1224,7 @@ function render(){
     var cur=state.spendPhase==='Golden'?state.spendGolden:state.spendPhase==='Silver'?state.spendSilver:state.spendLegacy;
     function setSpend(v){if(state.spendPhase==='Golden')state.spendGolden=v;else if(state.spendPhase==='Silver')state.spendSilver=v;else state.spendLegacy=v;render();}
     d.appendChild(sld(state.spendPhase+' spend',state.spendMin,state.spendMax,5000,cur,fmt(cur),setSpend));
-    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},'G='+fmt(state.spendGolden)+' | S='+fmt(state.spendSilver)+' | L='+fmt(state.spendLegacy)));
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},'G='+fmt(state.spendGolden)+' | S='+fmt(state.spendSilver)+' | L='+fmt(state.spendLegacy)+(state.indexation&&state.indexation.enabled?' (today\'s $, escalated at '+fmtPct(state.inflationRate)+' in projection)':' (flat nominal — enable auto-escalation under Concessional Caps to grow with CPI)')));
     d.appendChild(sld('Split when both retired (Rob %)',0,100,5,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
     return d;
   }));
@@ -1109,12 +1281,32 @@ function render(){
   }));
   ctrl.appendChild(collSec('ncc','Non-Concessional Contributions',function(){
     var d=el('div',{});
-    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},'After-tax contributions — no 15% contributions tax. Cap: $110k/yr (age ≤ 75).'));
+    var nccCapNow=nccCapForAge(Math.max(BASE_AGE,state.ncc.startAge),state);
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},
+      'After-tax contributions — no 15% contributions tax. Cap: '+fmt(nccCapNow)+'/yr (FY26-27: $130k, derived as 4× the concessional cap; escalates with it). Bring-forward: 2yr/3yr caps available if Total Super Balance is below TBC-derived tiers.'));
     d.appendChild(tog(state.ncc.enabled?'NCC: ON':'NCC: OFF',state.ncc.enabled,function(){state.ncc.enabled=!state.ncc.enabled;render();}));
     d.appendChild(sld('Rob NCC ($/yr)',0,200000,5000,state.ncc.robAnnual,fmt(state.ncc.robAnnual),function(v){state.ncc.robAnnual=v;render();}));
     d.appendChild(sld('Tina NCC ($/yr)',0,200000,5000,state.ncc.tinaAnnual,fmt(state.ncc.tinaAnnual),function(v){state.ncc.tinaAnnual=v;render();}));
     d.appendChild(sld('From age',45,75,1,state.ncc.startAge,String(state.ncc.startAge),function(v){state.ncc.startAge=v;render();}));
     d.appendChild(sld('To age',45,75,1,state.ncc.endAge,String(state.ncc.endAge),function(v){state.ncc.endAge=v;render();}));
+    if(state.ncc.enabled){
+      var startRow=rows.filter(function(r){return r.age===state.ncc.startAge;})[0];
+      if(startRow){
+        var tbcNow=tbcCapForAge(state.ncc.startAge,state);
+        function eligLabel(tsb){
+          if(tsb>=tbcNow)return{txt:'Not eligible (TSB ≥ TBC of '+fmt(tbcNow)+')',col:'#f06c6c'};
+          if(tsb<tbcNow-2*nccCapNow)return{txt:'3-yr bring-forward available ('+fmt(nccCapNow*3)+')',col:'#5dd87a'};
+          if(tsb<tbcNow-1*nccCapNow)return{txt:'2-yr bring-forward available ('+fmt(nccCapNow*2)+')',col:'#5dd87a'};
+          return{txt:'1-yr cap only, no bring-forward ('+fmt(nccCapNow)+')',col:'#f0b96c'};
+        }
+        var rElig=eligLabel(startRow.robClose),tElig=eligLabel(startRow.tinaClose);
+        d.appendChild(el('div',{style:{marginTop:'8px',padding:'8px',background:'#0a0c12',borderRadius:'8px',fontSize:'11px',lineHeight:'1.7'}},[
+          el('div',{style:{color:'#c0c5d8',fontWeight:'700'}},'Eligibility at age '+state.ncc.startAge+' (TSB = projected super balance):'),
+          el('div',{style:{color:rElig.col}},'Rob ('+fmt(startRow.robClose)+'): '+rElig.txt),
+          el('div',{style:{color:tElig.col}},'Tina ('+fmt(startRow.tinaClose)+'): '+tElig.txt)
+        ]));
+      }
+    }
     return d;
   }));
 
@@ -1184,6 +1376,39 @@ function render(){
     d.appendChild(numI('Age 54 cap ($)',state.caps.at54,function(v){state.caps.at54=v;render();},{step:500,min:0}));
     d.appendChild(numI('Age 55+ cap ($)',state.caps.after54,function(v){state.caps.after54=v;render();},{step:500,min:0}));
     d.appendChild(sld('Contributions tax',0,0.30,0.01,state.contribTax,fmtPct(state.contribTax),function(v){state.contribTax=v;render();}));
+    d.appendChild(tog(state.indexation.enabled?'Auto-escalate caps/thresholds/spend (CPI) ★':'Auto-escalate: OFF (figures frozen at today\'s law)',
+      state.indexation.enabled,function(){state.indexation.enabled=!state.indexation.enabled;render();}));
+    d.appendChild(sld('CPI / escalation rate',1,8,0.1,state.inflationRate*100,fmtPct(state.inflationRate),function(v){state.inflationRate=v/100;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'4px',lineHeight:'1.5'}},
+      'When ON, concessional/NCC caps, the Transfer Balance Cap, and Age Pension thresholds grow each projection year at this rate, and your Golden/Silver/Legacy spend (entered in today\'s dollars) is grown to nominal terms the same way. The Division 293 threshold stays fixed — it is not indexed by law.'));
+    return d;
+  }));
+
+  ctrl.appendChild(collSec('div293','Division 293 Tax',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},
+      'Extra 15% tax on concessional contributions when (taxable income + concessional contributions) exceeds the threshold — fixed at $250,000 by law, not indexed. Needs each person\'s taxable income (excl. super contributions) to estimate.'));
+    d.appendChild(tog(state.div293.enabled?'Division 293: ON':'Division 293: OFF',state.div293.enabled,function(){state.div293.enabled=!state.div293.enabled;render();}));
+    d.appendChild(numI('Rob taxable income ($)',state.div293.robIncome,function(v){state.div293.robIncome=v;render();},{step:5000,min:0}));
+    d.appendChild(numI('Tina taxable income ($)',state.div293.tinaIncome,function(v){state.div293.tinaIncome=v;render();},{step:5000,min:0}));
+    d.appendChild(numI('Threshold ($)',state.div293.threshold,function(v){state.div293.threshold=v;render();},{step:5000,min:0}));
+    return d;
+  }));
+
+  ctrl.appendChild(collSec('tbc','Transfer Balance Cap',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},
+      'General Transfer Balance Cap: $2.1m from 1 July 2026 (confirmed), escalating in ~$100k steps thereafter if auto-escalation is on. Balance held above the cap per person can\'t sit in the tax-free pension phase — modelled here as remaining in accumulation, taxed at 15% on earnings.'));
+    d.appendChild(tog(state.tbc.enabled?'TBC modelling: ON':'TBC modelling: OFF',state.tbc.enabled,function(){state.tbc.enabled=!state.tbc.enabled;render();}));
+    d.appendChild(numI('Cap ($, this year)',state.tbc.cap,function(v){state.tbc.cap=v;render();},{step:50000,min:0}));
+    if(state.tbc.enabled){
+      var robTBCctl=rows.filter(function(r){return r.phase==='FORECAST'&&r.robOverTBC;})[0];
+      var tinaTBCctl=rows.filter(function(r){return r.phase==='FORECAST'&&r.tinaOverTBC;})[0];
+      if(robTBCctl||tinaTBCctl){
+        d.appendChild(el('div',{style:{marginTop:'8px',padding:'8px',background:'#0a0c12',borderRadius:'8px',fontSize:'11px',lineHeight:'1.6',color:'#f0b96c'}},
+          (robTBCctl?'Rob exceeds the cap from age '+robTBCctl.age+'. ':'')+(tinaTBCctl?'Tina exceeds the cap from age '+tinaTBCctl.age+'.':'')));
+      }
+    }
     return d;
   }));
 
@@ -1245,10 +1470,31 @@ function render(){
     rightCol.appendChild(panel('Sensitivity: Balance at Age '+state.endAge,sensitivityTable()));
     rightCol.appendChild(panel(tblTitle,el('div',{},[
       mkTbl(tblHeaders,tblRows),
-      el('button',{style:{marginTop:'8px',padding:'5px 12px',borderRadius:'7px',border:'1px solid #252a3a',
-        background:'none',color:'#6c8ef0',cursor:'pointer',fontSize:'12px'},
-        onClick:function(){state.showAllRows=!state.showAllRows;render();}},
-        state.showAllRows?'Show less':'Show all '+rows.length+' rows')
+      el('div',{style:{display:'flex',gap:'8px',marginTop:'8px'}},[
+        el('button',{style:{padding:'5px 12px',borderRadius:'7px',border:'1px solid #252a3a',
+          background:'none',color:'#6c8ef0',cursor:'pointer',fontSize:'12px'},
+          onClick:function(){state.showAllRows=!state.showAllRows;render();}},
+          state.showAllRows?'Show less':'Show all '+rows.length+' rows'),
+        el('button',{style:{padding:'5px 12px',borderRadius:'7px',border:'1px solid #252a3a',
+          background:'none',color:'#6c8ef0',cursor:'pointer',fontSize:'12px'},
+          onClick:function(){
+            // Full dataset (all rows, not just the displayed slice), raw
+            // numbers rather than formatted strings, so it's usable in Excel.
+            var csvHeaders=['Age','Phase','Stage','RobClose','TinaClose','Combined','GrossSpend','OtherIncome','Pension','RobCC','TinaCC','RobNCC','TinaNCC','RobDiv293Tax','TinaDiv293Tax'];
+            var csvRows=rows.map(function(r){
+              return [r.age,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
+                r.grossSpend||0,r.otherIncome||0,r.pension||0,r.robCC||0,r.tinaCC||0,
+                r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
+            });
+            var csv=[csvHeaders].concat(csvRows).map(function(row){
+              return row.map(function(v){
+                var s=String(v);
+                return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+              }).join(',');
+            }).join('\r\n');
+            downloadBlob(csv,'text/csv','super-calculator-timeline-'+new Date().toISOString().slice(0,10)+'.csv');
+          }},'⬇ Export CSV')
+      ])
     ])));
 
   } else if(state.tab==='adviser'){
@@ -1270,12 +1516,31 @@ function render(){
       ['Fund exhaustion',exh?'Age '+exh.age:'Not projected','Horizon: age '+state.endAge]
     ];
     if(state.shock.enabled&&rowsShock){
+      // Bug fix: this block previously called `cards.appendChild(...)`, a
+      // variable that only exists in the 'super' tab branch. Referencing it
+      // here threw an uncaught TypeError the moment a user was on the
+      // Adviser tab with Market Shock enabled, blanking the panel with no
+      // error shown (the crash happened inside a click handler, outside the
+      // boot-time try/catch). Fixed by adding a row to advTbl instead, which
+      // this branch already renders below.
       var baseEnd=rows[rows.length-1];var shkEnd=rowsShock[rowsShock.length-1];
       var shkImpact=shkEnd.combinedClose-baseEnd.combinedClose;
       var shkExh=rowsShock.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
-      cards.appendChild(card('Shock at age '+state.endAge,(shkImpact>=0?'+':'')+fmt(shkImpact),
-        (state.shock.type==='crash'?'−':'+')+state.shock.magnitude+'% for '+state.shock.durationYears+'yr · '+(shkExh?'Exhausted age '+shkExh.age:'Survives horizon'),
-        shkImpact>=0?'#00e5cc':'#f06c6c'));
+      advTbl.push(['Market shock impact (age '+state.endAge+')',(shkImpact>=0?'+':'')+fmt(shkImpact),
+        (state.shock.type==='crash'?'−':'+')+state.shock.magnitude+'% for '+state.shock.durationYears+'yr · '+(shkExh?'Exhausted age '+shkExh.age:'Survives horizon')]);
+    }
+    if(state.div293&&state.div293.enabled){
+      var rDiv293Tot=rows.filter(function(r){return r.phase==='FORECAST';}).reduce(function(s,r){return s+(r.rDiv293||0);},0);
+      var tDiv293Tot=rows.filter(function(r){return r.phase==='FORECAST';}).reduce(function(s,r){return s+(r.tDiv293||0);},0);
+      advTbl.push(['Division 293 tax (lifetime)',fmt(rDiv293Tot+tDiv293Tot),'Rob '+fmt(rDiv293Tot)+' | Tina '+fmt(tDiv293Tot)+' · threshold '+fmt(state.div293.threshold)]);
+    }
+    if(state.tbc&&state.tbc.enabled){
+      var robTBCRow=rows.filter(function(r){return r.phase==='FORECAST'&&r.robOverTBC;})[0];
+      var tinaTBCRow=rows.filter(function(r){return r.phase==='FORECAST'&&r.tinaOverTBC;})[0];
+      if(robTBCRow||tinaTBCRow){
+        advTbl.push(['Transfer Balance Cap exceeded','Rob: '+(robTBCRow?'from age '+robTBCRow.age:'no')+' · Tina: '+(tinaTBCRow?'from age '+tinaTBCRow.age:'no'),
+          'Excess above cap taxed at 15%, not 0%, in retirement']);
+      }
     }
     if(state.lumpSums.length>0){
       state.lumpSums.forEach(function(ls){
