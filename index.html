@@ -10,8 +10,10 @@ html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-s
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:#1a1d27}
 ::-webkit-scrollbar-thumb{background:#3a3f55;border-radius:3px}
-input[type=range]{-webkit-appearance:none;height:4px;border-radius:2px;background:#2a2f42;outline:none;cursor:pointer;width:100%}
+input[type=range]{-webkit-appearance:none;-moz-appearance:none;appearance:none;height:4px;border-radius:2px;background:#2a2f42;outline:none;cursor:pointer;width:100%}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#6c8ef0;border:2px solid #0f1117}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#6c8ef0;border:2px solid #0f1117;cursor:pointer}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#2a2f42}
 input[type=number],input[type=text]{background:#1e2233;border:1px solid #2a3050;border-radius:6px;color:#e8eaf0;padding:5px 8px;font-size:12px;font-family:'DM Mono',monospace;outline:none}
 input[type=number]:focus,input[type=text]:focus{border-color:#6c8ef0}
 input[type=checkbox]{accent-color:#6c8ef0;width:14px;height:14px;cursor:pointer}
@@ -228,6 +230,11 @@ function defaultState(){
     pensionBoost:{enabled:false,rate:0.012},
     monteCarlo:{enabled:false,runs:300,stdDev:10},
     goal:{enabled:false,targetBalance:500000},
+    // Which variable the Sensitivity grid's row axis stress-tests: 'spend'
+    // (Golden/Silver/Legacy $ deltas, the original behaviour) or 'retireAge'
+    // (both retirement ages shifted together by the same number of years).
+    // Column axis is always retirement-return delta.
+    sensitivityAxis:'spend',
     netWorth:{homeValue:1500000,homeCpi:0.04},
     collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true,debtPaydown:true}
   };
@@ -364,6 +371,14 @@ function buildTimeline(st,returnOverrideFn){
   var earliestRetire=Math.min(st.robRetireAge,st.tinaRetireAge);
   var totalOther=otherTotal();
   var robOverTBC=false,tinaOverTBC=false; // set once either balance first exceeds the TBC in pension phase
+  // ATO minimum drawdown can force more out of super than the year's desired
+  // spend actually needs. That excess doesn't vanish — in reality it gets
+  // reinvested outside super — but until now the model just shrank the super
+  // balance with nowhere for the cash to go. Track it as a simple shadow
+  // balance, assumed reinvested at the same retirement return rate, so it
+  // shows up as real household wealth (Net Worth chart/rows, CSV) instead of
+  // disappearing.
+  var excessMDBal=0;
   for(var age=BASE_AGE;age<=st.endAge;age++){
     var rWork=age<st.robRetireAge,tWork=age<st.tinaRetireAge;
     var rCC=rWork?ccCapForAge(age,st):0;
@@ -476,6 +491,7 @@ function buildTimeline(st,returnOverrideFn){
       else{tSpend=Math.min(tBal,netSpend);}
     }
     // ── Minimum drawdown enforcement (ATO) ──────────────────────────────────
+    var rSpendBeforeMD=rSpend,tSpendBeforeMD=tSpend;
     if(st.minDrawdown&&st.minDrawdown.enabled&&age>=(st.minDrawdown.startAge||61)){
       var mdRate=minDrawdownRate(age);
       if(!rWork){var robMD=rBal*mdRate;if(robMD>rSpend)rSpend=Math.min(rBal,robMD);}
@@ -483,9 +499,16 @@ function buildTimeline(st,returnOverrideFn){
     }
     rBal=Math.max(0,rBal-rSpend);
     tBal=Math.max(0,tBal-tSpend);
+    // Cash pushed out of super by the mandatory minimum beyond what desired
+    // spend needed — grown at the same rate as the retirement portfolio
+    // (simplification: assumes it's reinvested, not spent).
+    var excessMDThisYear=Math.max(0,rSpend-rSpendBeforeMD)+Math.max(0,tSpend-tSpendBeforeMD);
+    var mdGrowthRate=returnOverrideFn?returnOverrideFn(age):st.retireReturn;
+    excessMDBal=excessMDBal*(1+mdGrowthRate)+excessMDThisYear;
     rows.push({age,phase:'FORECAST',stage,
       robClose:rBal,tinaClose:tBal,combinedClose:rBal+tBal,
       grossSpend,otherIncome,debtPaydownCash,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
+      excessMDCash:excessMDBal,
       robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,rDiv293,tDiv293,
       robOverTBC,tinaOverTBC,tbcCap:isFinite(tbcCap)?tbcCap:null,lsRob,lsTina,lsItems});
   }
@@ -532,6 +555,24 @@ function buildMonteCarloRows(){
   function pct(arr,p){var s=arr.slice().sort(function(a,b){return a-b;});return s[Math.min(Math.floor(p*s.length),s.length-1)]||0;}
   return ages.map(function(a){var v=byAge[a]||[];return{age:a,p10:pct(v,.1),p25:pct(v,.25),p50:pct(v,.5),p75:pct(v,.75),p90:pct(v,.9)};});
 }
+// Monte Carlo (up to 500 runs × the full projection horizon each) is heavy
+// enough that recomputing it on every single slider `input` event — which
+// fires continuously while dragging, not just on release — caused visible
+// jank. Cache the last result keyed off a full state snapshot; while a value
+// is "in flight" for a new state, keep serving the last-good result and
+// debounce the real recompute to 120ms after input settles, then trigger one
+// more render so the chart catches up. First-ever call computes synchronously
+// so the initial page load isn't stuck showing nothing.
+var mcCache={sig:null,rows:null},mcTimer=null;
+function getMonteCarloRowsDebounced(){
+  if(!state.monteCarlo||!state.monteCarlo.enabled){mcCache.sig=null;mcCache.rows=null;if(mcTimer){clearTimeout(mcTimer);mcTimer=null;}return null;}
+  var sig=JSON.stringify(state);
+  if(mcCache.sig===sig)return mcCache.rows;
+  if(mcCache.rows===null){mcCache.sig=sig;mcCache.rows=buildMonteCarloRows();return mcCache.rows;}
+  if(mcTimer)clearTimeout(mcTimer);
+  mcTimer=setTimeout(function(){mcCache.sig=sig;mcCache.rows=buildMonteCarloRows();mcTimer=null;render();},120);
+  return mcCache.rows;
+}
 
 // ─── Goal solver (binary search) ──────────────────────────────────────────
 function solveMaxSpend(targetBalance){
@@ -557,19 +598,41 @@ function solveMaxSpend(targetBalance){
   }
   return Math.round(lo/1000)*1000;
 }
+// Same debounce treatment as Monte Carlo: 60 binary-search iterations, each a
+// full buildTimeline(), on every slider input event was the other source of
+// drag jank. Cache + debounce, computing synchronously on first call only.
+var goalCache={sig:null,val:null},goalTimer=null;
+function getMaxSpendDebounced(targetBalance){
+  var sig=JSON.stringify(state)+'|'+targetBalance;
+  if(goalCache.sig===sig)return goalCache.val;
+  if(goalCache.val===null){goalCache.sig=sig;goalCache.val=solveMaxSpend(targetBalance);return goalCache.val;}
+  if(goalTimer)clearTimeout(goalTimer);
+  goalTimer=setTimeout(function(){goalCache.sig=sig;goalCache.val=solveMaxSpend(targetBalance);goalTimer=null;render();},120);
+  return goalCache.val;
+}
 
 // ─── Sensitivity grid ─────────────────────────────────────────────────────
 function buildSensitivity(){
   var rDeltas=[-0.02,-0.01,0,0.01,0.02];
-  var sDeltas=[-50000,-25000,0,25000,50000];
+  var axis=state.sensitivityAxis||'spend';
+  // Row axis: either spend deltas (original behaviour) or a shared shift to
+  // both retirement ages (years earlier/later), clamped to the sliders'
+  // 55–70 range. Column axis is always retirement-return delta either way.
+  var sDeltas=axis==='retireAge'?[-4,-2,0,2,4]:[-50000,-25000,0,25000,50000];
   return{
-    rDeltas:rDeltas,sDeltas:sDeltas,
+    axis:axis,rDeltas:rDeltas,sDeltas:sDeltas,
     grid:sDeltas.map(function(sd){
       return rDeltas.map(function(rd){
-        var st2=Object.assign({},state,{retireReturn:Math.max(0,state.retireReturn+rd),
-          spendGolden:Math.max(0,state.spendGolden+sd),
-          spendSilver:Math.max(0,state.spendSilver+sd),
-          spendLegacy:Math.max(0,state.spendLegacy+sd)});
+        var overrides={retireReturn:Math.max(0,state.retireReturn+rd)};
+        if(axis==='retireAge'){
+          overrides.robRetireAge=Math.max(55,Math.min(70,state.robRetireAge+sd));
+          overrides.tinaRetireAge=Math.max(55,Math.min(70,state.tinaRetireAge+sd));
+        }else{
+          overrides.spendGolden=Math.max(0,state.spendGolden+sd);
+          overrides.spendSilver=Math.max(0,state.spendSilver+sd);
+          overrides.spendLegacy=Math.max(0,state.spendLegacy+sd);
+        }
+        var st2=Object.assign({},state,overrides);
         var rows=buildTimeline(st2).filter(function(r){return r.phase==='FORECAST';});
         return rows.length?rows[rows.length-1].combinedClose:0;
       });
@@ -585,7 +648,8 @@ function netWorthRows(rows){
   var oa=otherTotal();
   return rows.filter(function(r){return r.phase==='FORECAST';}).map(function(r){
     var homeEq=state.homeowner&&hv>0?hv*Math.pow(1+hc,r.age-er):0;
-    return{age:r.age,superBal:r.combinedClose,home:homeEq,other:oa,total:r.combinedClose+homeEq+oa};
+    var excessMD=r.excessMDCash||0;
+    return{age:r.age,superBal:r.combinedClose,home:homeEq,other:oa,excessMD:excessMD,total:r.combinedClose+homeEq+oa+excessMD};
   });
 }
 
@@ -609,7 +673,7 @@ function collSec(key,title,fn){
   return w;
 }
 function tog(label,on,fn){
-  return el('button',{style:{padding:'7px 10px',borderRadius:'10px',border:'1px solid #252a3a',
+  return el('button',{'aria-pressed':String(!!on),style:{padding:'7px 10px',borderRadius:'10px',border:'1px solid #252a3a',
     background:on?'rgba(93,216,122,.12)':'transparent',color:on?'#5dd87a':'#7a8099',
     cursor:'pointer',fontWeight:'900',width:'100%',textAlign:'left',marginBottom:'6px'},onClick:fn},label);
 }
@@ -620,13 +684,14 @@ function sld(label,min,max,step,val,disp,fn){
       el('div',{style:{fontSize:'12px',color:'#6c8ef0',fontFamily:'monospace'}},disp)
     ]),
     el('input',{type:'range',min:String(min),max:String(max),step:String(step),value:String(val),
+      'aria-label':label+', currently '+disp,
       style:{width:'100%'},onInput:function(e){fn(numOr(e.target.value,min));}})
   ]);
 }
 function numI(label,val,fn,opts){
   opts=opts||{};
   var inp=el('input',{type:'number',value:String(val),step:String(opts.step||1),
-    min:String(opts.min||0),style:{width:'100%'}});
+    min:String(opts.min||0),'aria-label':label,style:{width:'100%'}});
   // Guard against NaN from empty/invalid input (e.g. user clears the field
   // or types a non-numeric value) silently propagating into the model.
   inp.addEventListener('change',function(e){
@@ -639,7 +704,7 @@ function numI(label,val,fn,opts){
     inp]);
 }
 function segBtn(label,active,fn){
-  return el('button',{style:{padding:'5px 9px',borderRadius:'7px',border:'1px solid #252a3a',
+  return el('button',{'aria-pressed':String(!!active),style:{padding:'5px 9px',borderRadius:'7px',border:'1px solid #252a3a',
     background:active?'rgba(108,142,240,.18)':'transparent',color:active?'#6c8ef0':'#7a8099',
     cursor:'pointer',fontWeight:'900',fontSize:'11px'},onClick:fn},label);
 }
@@ -754,11 +819,12 @@ function netWorthChart(nwRows){
   var step=Math.max(1,Math.ceil((xMax-xMin)/8));
   for(var xa=xMin;xa<=xMax;xa+=step)svg.appendChild(svgEl('text',{x:String(xp(xa)),y:String(H-pB+16),fill:'#5a6080','text-anchor':'middle',style:'font-size:9px'},String(xa)));
   svg.appendChild(svgEl('line',{x1:String(pL),y1:String(H-pB),x2:String(W-pR),y2:String(H-pB),stroke:'rgba(255,255,255,.1)'}));
-  // Stacked area: super, home, other
+  // Stacked area: super, home, other, excess mandatory drawdown (reinvested)
   var layers2=[
     {key:'superBal',col:'rgba(108,142,240,0.55)',lbl:'Super'},
     {key:'home',col:'rgba(93,216,122,0.45)',lbl:'Home Equity'},
-    {key:'other',col:'rgba(240,185,108,0.45)',lbl:'Other Assets'}
+    {key:'other',col:'rgba(240,185,108,0.45)',lbl:'Other Assets'},
+    {key:'excessMD',col:'rgba(160,108,240,0.45)',lbl:'Excess Min. Drawdown'}
   ];
   var bot=nwRows.map(function(){return 0;});
   layers2.forEach(function(ly){
@@ -773,7 +839,7 @@ function netWorthChart(nwRows){
     bot=top;
   });
   svg.appendChild(svgEl('path',{d:mkPath('total'),fill:'none',stroke:'#e8eaf0','stroke-width':'2'}));
-  var legNW=[{l:'Super',c:'rgba(108,142,240,0.7)'},{l:'Home',c:'rgba(93,216,122,0.7)'},{l:'Other',c:'rgba(240,185,108,0.7)'},{l:'Total',c:'#e8eaf0'}];
+  var legNW=[{l:'Super',c:'rgba(108,142,240,0.7)'},{l:'Home',c:'rgba(93,216,122,0.7)'},{l:'Other',c:'rgba(240,185,108,0.7)'},{l:'Excess Min. Drawdown',c:'rgba(160,108,240,0.7)'},{l:'Total',c:'#e8eaf0'}];
   legNW.forEach(function(it,j){var lx=pL+j*120,ly=H-4;
     svg.appendChild(svgEl('rect',{x:String(lx),y:String(ly-9),width:'10',height:'10',fill:it.c}));
     svg.appendChild(svgEl('text',{x:String(lx+14),y:String(ly),fill:'#c0c5d8',style:'font-size:10px'},it.l));
@@ -784,12 +850,18 @@ function netWorthChart(nwRows){
 // ─── Sensitivity table ─────────────────────────────────────────────────────
 function sensitivityTable(){
   var data=buildSensitivity();
+  var axis=data.axis;
   var baseVal=data.grid[2][2]; // centre cell
-  var wrap=el('div',{style:{overflowX:'auto'}});
+  var wrap=el('div',{});
+  wrap.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'8px'}},[
+    segBtn('Spend',axis==='spend',function(){state.sensitivityAxis='spend';render();}),
+    segBtn('Retirement Age',axis==='retireAge',function(){state.sensitivityAxis='retireAge';render();})
+  ]));
+  var tblWrap=el('div',{style:{overflowX:'auto'}});
   var tbl=el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'11px',fontFamily:'monospace'}});
   // Header row (return deltas)
   var hRow=el('tr',{});
-  hRow.appendChild(el('th',{style:{padding:'5px 8px',color:'#5a6080',textAlign:'right',fontSize:'10px'}},'Spend↓ / Ret→'));
+  hRow.appendChild(el('th',{style:{padding:'5px 8px',color:'#5a6080',textAlign:'right',fontSize:'10px'}},(axis==='retireAge'?'Retire↓':'Spend↓')+' / Ret→'));
   data.rDeltas.forEach(function(rd){
     var lbl=(rd>0?'+':'')+Math.round(rd*100)+'%';
     hRow.appendChild(el('th',{style:{padding:'5px 8px',color:'#7a8099',textAlign:'center',fontSize:'10px',fontWeight:'900'}},lbl));
@@ -797,8 +869,12 @@ function sensitivityTable(){
   tbl.appendChild(el('thead',{},[hRow]));
   var tbody=el('tbody',{});
   data.sDeltas.forEach(function(sd,si){
-    var sLbl=(sd>0?'+':sd===0?'Base':'')+fmt(sd===0?state.spendGolden:Math.abs(sd));
-    if(sd===0)sLbl='Base ('+fmt(state.spendGolden)+')';
+    var sLbl;
+    if(axis==='retireAge'){
+      sLbl=sd===0?'Base ('+state.robRetireAge+'/'+state.tinaRetireAge+')':(sd>0?'+':'')+sd+' yr'+(Math.abs(sd)===1?'':'s');
+    }else{
+      sLbl=sd===0?'Base ('+fmt(state.spendGolden)+')':(sd>0?'+':'')+fmt(sd);
+    }
     var row=el('tr',{});
     row.appendChild(el('td',{style:{padding:'5px 8px',color:'#7a8099',textAlign:'right',fontSize:'10px',whiteSpace:'nowrap'}},sLbl));
     data.grid[si].forEach(function(val,ri){
@@ -814,8 +890,12 @@ function sensitivityTable(){
     tbody.appendChild(row);
   });
   tbl.appendChild(tbody);
-  wrap.appendChild(tbl);
-  var note=el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'5px'}},'Values = combined super balance at age '+state.endAge+'. Blue = base scenario. Return delta applied to retirement return only.');
+  tblWrap.appendChild(tbl);
+  wrap.appendChild(tblWrap);
+  var noteTxt=axis==='retireAge'
+    ?'Values = combined super balance at age '+state.endAge+'. Blue = base scenario. Row shifts both retirement ages together (clamped 55–70); return delta applied to retirement return only.'
+    :'Values = combined super balance at age '+state.endAge+'. Blue = base scenario. Return delta applied to retirement return only.';
+  var note=el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'5px'}},noteTxt);
   wrap.appendChild(note);
   return wrap;
 }
@@ -1133,6 +1213,9 @@ function narrative(rows){
   }
   lines.push('Spending is phased: <strong>Golden '+fmt(state.spendGolden)+'</strong> / <strong>Silver '+fmt(state.spendSilver)+'</strong> / <strong>Legacy '+fmt(state.spendLegacy)+'</strong> per year gross, in today\'s dollars'+(state.indexation&&state.indexation.enabled?' (escalated at '+fmtPct(state.inflationRate)+' CPI in the projection)':'')+'. Drawdown is met first from other-asset income, then Age Pension, with the remainder from super.<br><br>');
   if(tot>0&&oi){lines.push('Other assets total <strong>'+fmt(tot)+'</strong>, generating <strong>'+fmt(oi.otherIncome)+'</strong>/yr from age '+(state.otherIncomeStartAge+1)+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI '+fmtPct(state.otherAssetsCpi)+' p.a.).<br><br>');}
+  if(state.minDrawdown&&state.minDrawdown.enabled&&a90.excessMDCash>1000){
+    lines.push('📤 <strong>Mandatory minimum drawdown</strong> pulls more out of super than spending needs in later years. Assuming that excess is reinvested (not spent), it grows to an estimated <strong>'+fmt(a90.excessMDCash)+'</strong> outside super by age '+state.endAge+' — shown separately in the Net Worth chart.<br><br>');
+  }
   if(state.usePension&&a67){
     if(a67.pension>0){lines.push('Age Pension estimated at <strong>'+fmt(a67.pension)+'</strong>/yr from age 67.<br><br>');}
     else{lines.push('No Age Pension payable at age 67 — assets exceed threshold. May improve as balances drawdown.<br><br>');}
@@ -1174,6 +1257,25 @@ var root=document.getElementById('root');
 root.innerHTML='';
 root.style.cssText='height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#0f1117;color:#e8eaf0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
 
+// Beyond JSON.parse succeeding, sanity-check that this actually looks like a
+// Super Calculator export before letting it overwrite the current scenario —
+// valid-but-unrelated JSON (or a hand-edited file with a typo) could
+// otherwise silently load garbage numbers into the model with no warning.
+function isValidScenarioShape(obj){
+  if(!obj||typeof obj!=='object')return false;
+  var numFields=['robRetireAge','tinaRetireAge','endAge','spendGolden','spendSilver','spendLegacy','robSeed','tinaSeed'];
+  for(var i=0;i<numFields.length;i++){
+    var v=obj[numFields[i]];
+    if(v===undefined)continue; // deepMerge will fill missing fields from defaults
+    if(typeof v!=='number'||!isFinite(v)||v<0)return false;
+  }
+  if(obj.robRetireAge!==undefined&&(obj.robRetireAge<40||obj.robRetireAge>100))return false;
+  if(obj.tinaRetireAge!==undefined&&(obj.tinaRetireAge<40||obj.tinaRetireAge>100))return false;
+  if(obj.endAge!==undefined&&(obj.endAge<40||obj.endAge>120))return false;
+  if(obj.caps!==undefined&&(typeof obj.caps!=='object'||obj.caps===null))return false;
+  if(obj.lumpSums!==undefined&&!Array.isArray(obj.lumpSums))return false;
+  return true;
+}
 var importInp=el('input',{type:'file',accept:'application/json',style:{display:'none'}});
 importInp.addEventListener('change',function(e){
   var file=e.target.files&&e.target.files[0];
@@ -1182,6 +1284,7 @@ importInp.addEventListener('change',function(e){
   reader.onload=function(){
     try{
       var imported=JSON.parse(String(reader.result));
+      if(!isValidScenarioShape(imported))throw new Error('shape check failed');
       var tabKeep=state.tab;
       Object.assign(state,deepMerge(defaultState(),imported));
       state.tab=tabKeep;
@@ -1245,7 +1348,7 @@ function render(){
   var rowsB=state.showScenarioB?buildTimelineB():null;
   var rowsShock=buildShockTimeline();
   var oiFirstRow=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
-  var mcRows=buildMonteCarloRows();
+  var mcRows=getMonteCarloRowsDebounced();
   var nwRows=netWorthRows(rows);
   var er=Math.min(state.robRetireAge,state.tinaRetireAge);
   var aRet=rows.filter(function(r){return r.age===er;})[0]||rows[0];
@@ -1446,7 +1549,7 @@ function render(){
     d.appendChild(tog(state.goal.enabled?'Goal solver: ON':'Goal solver: OFF',state.goal.enabled,function(){state.goal.enabled=!state.goal.enabled;render();}));
     d.appendChild(sld('Target balance at '+state.endAge,0,2000000,50000,state.goal.targetBalance,fmt(state.goal.targetBalance),function(v){state.goal.targetBalance=v;render();}));
     if(state.goal.enabled){
-      var maxSpend=solveMaxSpend(state.goal.targetBalance);
+      var maxSpend=getMaxSpendDebounced(state.goal.targetBalance);
       var col=maxSpend>=state.spendGolden?'#5dd87a':'#f0b96c';
       d.appendChild(el('div',{style:{marginTop:'8px',padding:'10px',background:'#0a0c12',borderRadius:'8px'}},[
         el('div',{style:{fontSize:'11px',color:'#7a8099'}},'Max sustainable Golden spend:'),
@@ -1487,11 +1590,11 @@ function render(){
   ctrl.appendChild(collSec('div293','Division 293 Tax',function(){
     var d=el('div',{});
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},
-      'Extra 15% tax on concessional contributions when (taxable income + concessional contributions) exceeds the threshold — fixed at $250,000 by law, not indexed. Needs each person\'s taxable income (excl. super contributions) to estimate.'));
+      'Extra 15% tax on concessional contributions when (taxable income + concessional contributions) exceeds the threshold. Currently $250,000 by law and, unlike the other caps/thresholds in this tool, has never been indexed since 2017 — edit it below only if that changes. Needs each person\'s taxable income (excl. super contributions) to estimate.'));
     d.appendChild(tog(state.div293.enabled?'Division 293: ON':'Division 293: OFF',state.div293.enabled,function(){state.div293.enabled=!state.div293.enabled;render();}));
     d.appendChild(numI('Rob taxable income ($)',state.div293.robIncome,function(v){state.div293.robIncome=v;render();},{step:5000,min:0}));
     d.appendChild(numI('Tina taxable income ($)',state.div293.tinaIncome,function(v){state.div293.tinaIncome=v;render();},{step:5000,min:0}));
-    d.appendChild(numI('Threshold ($)',state.div293.threshold,function(v){state.div293.threshold=v;render();},{step:5000,min:0}));
+    d.appendChild(numI('Threshold ($, not indexed by law)',state.div293.threshold,function(v){state.div293.threshold=v;render();},{step:5000,min:0}));
     return d;
   }));
 
@@ -1614,11 +1717,11 @@ function render(){
           onClick:function(){
             // Full dataset (all rows, not just the displayed slice), raw
             // numbers rather than formatted strings, so it's usable in Excel.
-            var csvHeaders=['Age','Phase','Stage','RobClose','TinaClose','Combined','RobYoYReturn','TinaYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','RobCC','TinaCC','RobNCC','TinaNCC','RobDiv293Tax','TinaDiv293Tax'];
+            var csvHeaders=['Age','Phase','Stage','RobClose','TinaClose','Combined','RobYoYReturn','TinaYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','RobCC','TinaCC','RobNCC','TinaNCC','RobDiv293Tax','TinaDiv293Tax'];
             var csvRows=rows.map(function(r){
               return [r.age,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
                 r.robReturn!=null?r.robReturn:'',r.tinaReturn!=null?r.tinaReturn:'',r.combinedReturn!=null?r.combinedReturn:'',
-                r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.robCC||0,r.tinaCC||0,
+                r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.tinaCC||0,
                 r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
             });
             var csv=[csvHeaders].concat(csvRows).map(function(row){
