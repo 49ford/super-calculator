@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Superannuation Calculator V11</title>
+<title>Superannuation Calculator V12</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-serif}
@@ -58,7 +58,7 @@ button{font-family:'DM Sans','Segoe UI',sans-serif}
 function showFatal(msg,err){
   console.error(msg,err||'');
   var r=document.getElementById('root');
-  if(r)r.innerHTML='<div style="padding:32px;background:#0f1117;color:#f06c6c;font-family:monospace"><h2>V11 Error</h2><pre style="color:#f0b96c;margin-top:12px;white-space:pre-wrap">'+esc(msg)+'</pre></div>';
+  if(r)r.innerHTML='<div style="padding:32px;background:#0f1117;color:#f06c6c;font-family:monospace"><h2>V12 Error</h2><pre style="color:#f0b96c;margin-top:12px;white-space:pre-wrap">'+esc(msg)+'</pre></div>';
 }
 // ─── HTML escaping (prevents user-entered text, e.g. lump-sum labels, from
 // being interpreted as markup when we build innerHTML strings) ─────────────
@@ -89,23 +89,26 @@ var ACTUALS=[
   {age:50,robOpen:567311,tinaOpen:419005},
   {age:51,robOpen:652528,tinaOpen:484791},
   {age:52,robOpen:730025,tinaOpen:559116},
-  {age:53,robOpen:829122.86,tinaOpen:658880}
+  {age:53,robOpen:829122.86,tinaOpen:658880},
+  {age:54,robOpen:934773.08,tinaOpen:729006.22}
 ];
-var FINAL_ACTUAL_CLOSE={rob:829122.86,tina:658880};
+var FINAL_ACTUAL_CLOSE={rob:934773.08,tina:729006.22};
 var HORIZON=41;
 // BASE_AGE = "this year" (FY2026-27) — the anchor every indexed figure (caps,
-// pension thresholds, TBC, CPI-escalated spend) grows forward from.
-var BASE_AGE=54;
-// Concessional cap for a given projection age. age===54 uses the FY25-26 cap
-// (their actual last-known contribution year), age 55+ uses the confirmed
-// FY26-27 cap ($32,500), then escalates in $2,500 AWOTE-style steps if
-// indexation is enabled. NCC annual cap is legislated as 4× this figure.
+// pension thresholds, TBC, CPI-escalated spend) grows forward from. Age 54
+// closed out FY25-26 and is now an ACTUAL row (see ACTUALS above), so the
+// forecast — and every indexed figure — starts from age 55.
+var BASE_AGE=55;
+// Concessional cap for a given projection age. Age 54's cap was a one-off
+// (their actual, now-historical FY25-26 contribution year, captured in
+// ACTUALS rather than modelled here). From age 55 (FY26-27, confirmed
+// $32,500) onward this escalates in $2,500 AWOTE-style steps if indexation
+// is enabled. NCC annual cap is legislated as 4× this figure.
 function ccCapForAge(age,st){
-  if(age===54)return st.caps.at54;
-  if(age<54)return 0;
+  if(age<BASE_AGE)return 0;
   var base=st.caps.after54;
   if(!st.indexation||!st.indexation.enabled)return base;
-  var grown=base*Math.pow(1+st.inflationRate,Math.max(0,age-55));
+  var grown=base*Math.pow(1+st.inflationRate,Math.max(0,age-BASE_AGE));
   return Math.max(base,Math.floor(grown/2500)*2500);
 }
 function nccCapForAge(age,st){return ccCapForAge(age,st)*4;}
@@ -172,10 +175,11 @@ function defaultState(){
     showInflationAdj:false,
     inflationRate:0.035,
     showScenarioB:false,
-    // Concessional cap: $30,000 at age 54 (their actual FY25-26 cap),
-    // $32,500 from age 55+ (confirmed FY26-27 cap). Escalates further via
-    // `indexation`. NCC annual cap is derived as 4× this (currently $130,000).
-    caps:{at54:30000,after54:32500},
+    // Concessional cap: $32,500, the confirmed FY26-27 cap (age 55, the first
+    // forecast year — age 54's $30,000 FY25-26 cap is now historical and
+    // captured in ACTUALS instead). Escalates further via `indexation`. NCC
+    // annual cap is derived as 4× this (currently $130,000).
+    caps:{after54:32500},
     // Division 293: extra 15% tax on concessional contributions when
     // (income + CC) exceeds the threshold. The $250k threshold is fixed by
     // law (unindexed since 2017). Off by default — needs each person's
@@ -197,7 +201,7 @@ function defaultState(){
     },
     lumpSums:[],
     shock:{enabled:false,type:'crash',magnitude:25,startOffset:1,durationYears:2},
-    ncc:{enabled:false,robAnnual:0,tinaAnnual:0,startAge:54,endAge:60},
+    ncc:{enabled:false,robAnnual:0,tinaAnnual:0,startAge:55,endAge:60},
     partTime:{enabled:false,robAmount:0,robStartAge:60,robEndAge:63,tinaAmount:0,tinaStartAge:60,tinaEndAge:63},
     minDrawdown:{enabled:true,startAge:61},
     pensionBoost:{enabled:false,rate:0.012},
@@ -209,24 +213,32 @@ function defaultState(){
 }
 
 // ─── localStorage ──────────────────────────────────────────────────────────
-var LS_KEY='supercalc_v11_state';
-// Fields whose "correct" value is set by law/indexation, not personal
-// preference. When migrating from an older save, we drop these so the user
-// inherits the freshly-corrected defaults above instead of carrying forward
-// whatever was stale in their old browser storage. Fields the user is meant
-// to tweak (concessional caps, retirement ages, spend, etc.) are preserved.
+var LS_KEY='supercalc_v12_state';
+// Fields whose "correct" value is set by law/indexation/actual account data,
+// not personal preference. When migrating from an older save, we drop these
+// so the user inherits the freshly-corrected defaults above instead of
+// carrying forward whatever was stale in their old browser storage. Fields
+// the user is meant to tweak (concessional caps, retirement ages, spend,
+// etc.) are preserved. robSeed/tinaSeed are included here because they're
+// derived from ACTUALS/FINAL_ACTUAL_CLOSE (real account balances), not a
+// user preference — each time the actuals move forward a year, an old save's
+// seed would otherwise stay frozen on last year's closing balance forever.
 var REGULATORY_KEYS=['fullPension','assetThreshold','assetTaperPerDollar',
-  'deemingThreshold','deemingRateLow','deemingRateHigh','incomeFreeArea','incomeTaperRate'];
+  'deemingThreshold','deemingRateLow','deemingRateHigh','incomeFreeArea','incomeTaperRate',
+  'robSeed','tinaSeed'];
 function stripRegulatoryDefaults(s){
   var out=Object.assign({},s);
   REGULATORY_KEYS.forEach(function(k){delete out[k];});
+  // caps.at54 no longer exists as a concept (age 54 is now an ACTUAL row) —
+  // drop it explicitly so it doesn't linger as dead data in a migrated save.
+  if(out.caps){out.caps=Object.assign({},out.caps);delete out.caps.at54;}
   return out;
 }
 function loadState(){
   try{
     var raw=localStorage.getItem(LS_KEY);
     if(!raw){
-      var prevKeys=['supercalc_v10_state','supercalc_v9_state','supercalc_v8_state','supercalc_v7_state'];
+      var prevKeys=['supercalc_v11_state','supercalc_v10_state','supercalc_v9_state','supercalc_v8_state','supercalc_v7_state'];
       for(var i=0;i<prevKeys.length;i++){
         var old=localStorage.getItem(prevKeys[i]);
         if(old){
@@ -319,7 +331,7 @@ function buildTimeline(st,returnOverrideFn){
   var earliestRetire=Math.min(st.robRetireAge,st.tinaRetireAge);
   var totalOther=otherTotal();
   var robOverTBC=false,tinaOverTBC=false; // set once either balance first exceeds the TBC in pension phase
-  for(var age=54;age<=st.endAge;age++){
+  for(var age=BASE_AGE;age<=st.endAge;age++){
     var rWork=age<st.robRetireAge,tWork=age<st.tinaRetireAge;
     var rCC=rWork?ccCapForAge(age,st):0;
     var tCC=tWork?ccCapForAge(age,st):0;
@@ -430,7 +442,7 @@ function buildTimeline(st,returnOverrideFn){
       robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,rDiv293,tDiv293,
       robOverTBC,tinaOverTBC,tbcCap:isFinite(tbcCap)?tbcCap:null,lsRob,lsTina,lsItems});
   }
-  var startAge=st.showActuals?48:54;
+  var startAge=st.showActuals?48:BASE_AGE;
   return rows.filter(function(r){return r.age>=startAge;});
 }
 function buildTimelineB(){
@@ -458,12 +470,12 @@ function buildMonteCarloRows(){
   var seed=54321;
   function rng(){seed=((seed*1664525+1013904223)>>>0);return seed/4294967296;}
   function randn(){var u=Math.max(1e-9,rng()),v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(6.2831853*v);}
-  var ages=[];var sa=state.showActuals?48:54;
+  var ages=[];var sa=state.showActuals?48:BASE_AGE;
   for(var a=sa;a<=state.endAge;a++)ages.push(a);
   var byAge={};ages.forEach(function(a){byAge[a]=[];});
   for(var i=0;i<runs;i++){
     var rm={};
-    for(var a=54;a<=state.endAge;a++){
+    for(var a=BASE_AGE;a<=state.endAge;a++){
       var mean=a<er?state.robWorkReturn:state.retireReturn;
       rm[a]=Math.max(-0.5,Math.min(0.6,mean+sigma*randn()));
     }
@@ -764,7 +776,7 @@ function lumpSumEditor(){
   formDiv.appendChild(labelInp);
 
   var row1=el('div',{style:{display:'flex',gap:'6px',marginBottom:'6px'}});
-  var ageInp=el('input',{type:'number',placeholder:'Age',value:String(lsForm.age),min:'54',max:'100',step:'1',style:{width:'60px'}});
+  var ageInp=el('input',{type:'number',placeholder:'Age',value:String(lsForm.age),min:String(BASE_AGE),max:'100',step:'1',style:{width:'60px'}});
   ageInp.addEventListener('change',function(e){lsForm.age=numOr(e.target.value,60);ageInp.value=String(lsForm.age);});
   var amtInp=el('input',{type:'number',placeholder:'Amount $',value:String(lsForm.amount),min:'0',step:'10000',style:{flex:'1'}});
   amtInp.addEventListener('change',function(e){lsForm.amount=numOr(e.target.value,0);amtInp.value=String(lsForm.amount);});
@@ -891,7 +903,7 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
   var allVals=rows.map(function(r){return r.combinedClose;});
   if(rowsB)rowsB.forEach(function(r){allVals.push(r.combinedClose);});
   if(rowsShock)rowsShock.forEach(function(r){allVals.push(r.combinedClose);});
-  if(mcRows){var mcFcast=mcRows.filter(function(r){return r.age>=54;});if(mcFcast.length){allVals.push(mcFcast[mcFcast.length-1].p90);}}
+  if(mcRows){var mcFcast=mcRows.filter(function(r){return r.age>=BASE_AGE;});if(mcFcast.length){allVals.push(mcFcast[mcFcast.length-1].p90);}}
   var yMax=Math.max.apply(null,allVals)*1.08;
   var xD=(xMax-xMin)||1,yD=yMax||1;
   function xp(a){return pL+((a-xMin)/xD)*(W-pL-pR);}
@@ -930,7 +942,7 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
 
   // Monte Carlo band (p10–p90)
   if(mcRows&&mcRows.length>1){
-    var mcF=mcRows.filter(function(r){return r.age>=54;});
+    var mcF=mcRows.filter(function(r){return r.age>=BASE_AGE;});
     if(mcF.length>1){
       var fwd=mcF.map(function(r){return xp(r.age).toFixed(1)+','+yp(r.p90).toFixed(1);}).join(' ');
       var bwd=mcF.slice().reverse().map(function(r){return xp(r.age).toFixed(1)+','+yp(r.p10).toFixed(1);}).join(' ');
@@ -1058,7 +1070,7 @@ function narrative(rows){
   var oi=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
   var ls=state.lumpSums;
   var lines=[];
-  lines.push('<strong>Retirement Outlook — V11 Summary</strong><br><br>');
+  lines.push('<strong>Retirement Outlook — V12 Summary</strong><br><br>');
   lines.push('Rob retires at <strong>age '+state.robRetireAge+'</strong> and Tina at <strong>age '+state.tinaRetireAge+'</strong>, with a combined super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at earliest retirement (Rob '+fmt(aR.robClose)+' | Tina '+fmt(aR.tinaClose)+').<br><br>');
   if(state.robRetireAge<60||state.tinaRetireAge<60){
     lines.push('⚠️ <strong>Below preservation age:</strong> '+(state.robRetireAge<60?'Rob\'s':'')+(state.robRetireAge<60&&state.tinaRetireAge<60?' and ':'')+(state.tinaRetireAge<60?'Tina\'s':'')+' planned retirement age is under the general preservation age of 60 — early access to super requires meeting a condition of release.<br><br>');
@@ -1097,7 +1109,7 @@ function narrative(rows){
   }
   if(exh){lines.push('⚠️ <strong>Funds exhausted at age '+exh.age+'.</strong> Reduce spending, increase returns, or add inflows.<br><br>');}
   else{lines.push('✅ <strong>Funds last to age '+state.endAge+'</strong> with <strong>'+fmt(a90.combinedClose)+'</strong> remaining (Rob '+fmt(a90.robClose)+' | Tina '+fmt(a90.tinaClose)+').<br><br>');}
-  lines.push('<em>Returns: Rob '+fmtPct(state.robWorkReturn)+' / Tina '+fmtPct(state.tinaWorkReturn)+' (work), '+fmtPct(state.retireReturn)+' (retirement). CC: $'+state.caps.at54.toLocaleString()+' (age 54), $'+state.caps.after54.toLocaleString()+' (55+, escalating). Tax '+fmtPct(state.contribTax)+'. Figures nominal unless "Real $" is on; spend and pension/cap thresholds escalate at '+fmtPct(state.inflationRate)+' CPI when indexation is on.</em>');
+  lines.push('<em>Returns: Rob '+fmtPct(state.robWorkReturn)+' / Tina '+fmtPct(state.tinaWorkReturn)+' (work), '+fmtPct(state.retireReturn)+' (retirement). Concessional cap: $'+state.caps.after54.toLocaleString()+' (FY26-27, escalating from age '+BASE_AGE+'). Tax '+fmtPct(state.contribTax)+'. Figures nominal unless "Real $" is on; spend and pension/cap thresholds escalate at '+fmtPct(state.inflationRate)+' CPI when indexation is on.</em>');
   return lines.join('');
 }
 
@@ -1134,9 +1146,9 @@ function downloadBlob(text,mime,filename){
 
 var header=el('div',{style:{padding:'12px 20px',background:'#161923',borderBottom:'1px solid #252a3a',display:'flex',justifyContent:'space-between',alignItems:'center'}},[
   el('div',{},[
-    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V11 | SUPER CALCULATOR'),
+    el('div',{style:{fontSize:'9px',letterSpacing:'2px',color:'#5a6080',textTransform:'uppercase'}},'V12 | SUPER CALCULATOR'),
     el('div',{style:{fontSize:'20px',fontWeight:'900',marginTop:'2px'}},'Superannuation Calculator'),
-    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'V11 · Monte Carlo · Min drawdown · NCC · Part-time · Div 293 · TBC · Indexation · Net worth · Goal solver')
+    el('div',{style:{fontSize:'11px',color:'#7a8099',marginTop:'1px'}},'V12 · Monte Carlo · Min drawdown · NCC · Part-time · Div 293 · TBC · Indexation · Net worth · Goal solver')
   ]),
   el('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}},[
     el('button',{class:'no-print',style:{padding:'5px 10px',borderRadius:'7px',border:'1px solid #252a3a',background:'none',color:'#7a8099',cursor:'pointer',fontSize:'11px'},onClick:function(){window.print();}}, '🖨 Print'),
@@ -1384,8 +1396,7 @@ function render(){
 
   ctrl.appendChild(collSec('advanced','Concessional Caps',function(){
     var d=el('div',{});
-    d.appendChild(numI('Age 54 cap ($)',state.caps.at54,function(v){state.caps.at54=v;render();},{step:500,min:0}));
-    d.appendChild(numI('Age 55+ cap ($)',state.caps.after54,function(v){state.caps.after54=v;render();},{step:500,min:0}));
+    d.appendChild(numI('Concessional cap ($, FY26-27)',state.caps.after54,function(v){state.caps.after54=v;render();},{step:500,min:0}));
     d.appendChild(sld('Contributions tax',0,0.30,0.01,state.contribTax,fmtPct(state.contribTax),function(v){state.contribTax=v;render();}));
     d.appendChild(tog(state.indexation.enabled?'Auto-escalate caps/thresholds/spend (CPI) ★':'Auto-escalate: OFF (figures frozen at today\'s law)',
       state.indexation.enabled,function(){state.indexation.enabled=!state.indexation.enabled;render();}));
@@ -1460,7 +1471,7 @@ function render(){
     if(hasLS)tblHeaders.push('Events');
     var tblRows=dispRows.map(function(r){
       var isA=r.phase==='ACTUAL';
-      var yrs=(!isA&&state.showInflationAdj)?(r.age-54):0;
+      var yrs=(!isA&&state.showInflationAdj)?(r.age-BASE_AGE):0;
       function fc(n){return isA?fmt(n):fmtReal(n,yrs);}
       var cells=[
         String(r.age),isA?'Actual':'Forecast',r.stage||'—',
