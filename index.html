@@ -160,6 +160,12 @@ function defaultState(){
     otherAssetsCpi:0.035,
     otherAssetsRateMode:'yield',
     otherIncomeStartAge:60,
+    // Cash flow age 55-60 (before Other Income proper starts at 61) that
+    // isn't invested or available for spending — it's going straight to
+    // paying down loans/debt. Purely informational: shown in the Other Inc
+    // column in a different colour so it's not confused with real invested
+    // income, but never added to netSpend, otherIncome, or the pension test.
+    debtPaydown:{enabled:true,startAge:55,endAge:60,amount:32000},
     usePension:true,
     homeowner:true,
     // Age Pension figures: 20 Mar 2026 – 19 Sep 2026 Services Australia rates
@@ -208,7 +214,7 @@ function defaultState(){
     monteCarlo:{enabled:false,runs:300,stdDev:10},
     goal:{enabled:false,targetBalance:500000},
     netWorth:{homeValue:1500000,homeCpi:0.04},
-    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true}
+    collapsed:{returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true,debtPaydown:true}
   };
 }
 
@@ -403,6 +409,16 @@ function buildTimeline(st,returnOverrideFn){
     if(anyRet&&age>st.otherIncomeStartAge){
       otherIncome=totalOther*st.otherAssetsReturn*Math.pow(1+st.otherAssetsCpi,age-st.otherIncomeStartAge-1);
     }
+    // ── Debt paydown cash (age 55-60, informational only) ──────────────────
+    // Not invested, not available to fund spend, doesn't touch the balance,
+    // the pension test, or netSpend below — purely noted for the timeline
+    // table so it's visible that cash is flowing in during these years, just
+    // not into anything this model tracks. Real Other Income (above) starts
+    // separately at otherIncomeStartAge+1.
+    var debtPaydownCash=0;
+    if(st.debtPaydown&&st.debtPaydown.enabled&&age>=st.debtPaydown.startAge&&age<=st.debtPaydown.endAge){
+      debtPaydownCash=idx(st.debtPaydown.amount,age,st);
+    }
     // ── Age pension ─────────────────────────────────────────────────────────
     // Pension thresholds/rates are indexed forward from today (BASE_AGE) so a
     // 40-year projection doesn't apply 2026 settings unchanged out to age 90.
@@ -450,7 +466,7 @@ function buildTimeline(st,returnOverrideFn){
     tBal=Math.max(0,tBal-tSpend);
     rows.push({age,phase:'FORECAST',stage,
       robClose:rBal,tinaClose:tBal,combinedClose:rBal+tBal,
-      grossSpend,otherIncome,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
+      grossSpend,otherIncome,debtPaydownCash,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
       robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,rDiv293,tDiv293,
       robOverTBC,tinaOverTBC,tbcCap:isFinite(tbcCap)?tbcCap:null,lsRob,lsTina,lsItems});
   }
@@ -1284,6 +1300,19 @@ function render(){
     return d;
   }));
 
+  ctrl.appendChild(collSec('debtPaydown','Debt Paydown Cash (Age 55-60)',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},
+      'Cash flowing in before Other Income proper starts at 61, that isn\'t invested and isn\'t available to fund spend — it\'s going straight to paying down loans/debt. Shown in amber in the Timeline\'s Other Inc column so it\'s clearly not the same thing as real invested income; it never affects the super balance, drawdown, or the pension test.'));
+    d.appendChild(tog(state.debtPaydown.enabled?'Debt paydown cash: ON':'Debt paydown cash: OFF',state.debtPaydown.enabled,function(){state.debtPaydown.enabled=!state.debtPaydown.enabled;render();}));
+    d.appendChild(sld('Amount ($/yr, this year)',0,100000,1000,state.debtPaydown.amount,fmt(state.debtPaydown.amount),function(v){state.debtPaydown.amount=v;render();}));
+    d.appendChild(sld('From age',55,70,1,state.debtPaydown.startAge,String(state.debtPaydown.startAge),function(v){state.debtPaydown.startAge=v;render();}));
+    d.appendChild(sld('To age (inclusive)',55,70,1,state.debtPaydown.endAge,String(state.debtPaydown.endAge),function(v){state.debtPaydown.endAge=v;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'4px'}},
+      state.indexation&&state.indexation.enabled?'Escalates at '+fmtPct(state.inflationRate)+' CPI each year (uses the same auto-escalation toggle as caps/pension thresholds).':'Auto-escalation is off, so this stays flat at '+fmt(state.debtPaydown.amount)+'/yr.'));
+    return d;
+  }));
+
   ctrl.appendChild(collSec('lumpsums','Lump Sum Events'+(state.lumpSums.length>0?' ('+state.lumpSums.length+')':''),lumpSumEditor));
 
   ctrl.appendChild(collSec('shock','Market Shock (Seq. of Returns)',function(){
@@ -1490,7 +1519,11 @@ function render(){
         fc(r.robClose),fc(r.tinaClose),fc(r.combinedClose),
         isA&&r.combinedReturn!=null?fmtPctSigned(r.combinedReturn):'—',
         r.grossSpend?fc(r.grossSpend):'—',
-        r.otherIncome?fmt(r.otherIncome):'—',
+        // Debt paydown cash (age 55-60, not invested/not spendable) shown in
+        // amber so it's visually distinct from real invested Other Income
+        // (61+, drives the pension test and offsets drawdown) in the same
+        // column, per how the two figures were asked to be told apart.
+        r.debtPaydownCash?el('span',{style:{color:'#f0b96c'}},fmt(r.debtPaydownCash)):(r.otherIncome?fmt(r.otherIncome):'—'),
         r.pension?fmt(r.pension):'—'
       ];
       if(hasLS){
@@ -1539,11 +1572,11 @@ function render(){
           onClick:function(){
             // Full dataset (all rows, not just the displayed slice), raw
             // numbers rather than formatted strings, so it's usable in Excel.
-            var csvHeaders=['Age','Phase','Stage','RobClose','TinaClose','Combined','RobYoYReturn','TinaYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','Pension','RobCC','TinaCC','RobNCC','TinaNCC','RobDiv293Tax','TinaDiv293Tax'];
+            var csvHeaders=['Age','Phase','Stage','RobClose','TinaClose','Combined','RobYoYReturn','TinaYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','RobCC','TinaCC','RobNCC','TinaNCC','RobDiv293Tax','TinaDiv293Tax'];
             var csvRows=rows.map(function(r){
               return [r.age,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
                 r.robReturn!=null?r.robReturn:'',r.tinaReturn!=null?r.tinaReturn:'',r.combinedReturn!=null?r.combinedReturn:'',
-                r.grossSpend||0,r.otherIncome||0,r.pension||0,r.robCC||0,r.tinaCC||0,
+                r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.robCC||0,r.tinaCC||0,
                 r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
             });
             var csv=[csvHeaders].concat(csvRows).map(function(row){
