@@ -304,6 +304,7 @@ function svgEl(tag,a,ch){
 }
 function fmt(n){return'$'+Math.round(n).toLocaleString('en-AU');}
 function fmtPct(d){return(d*100).toFixed(2)+'%';}
+function fmtPctSigned(d){return(d>=0?'+':'')+(d*100).toFixed(1)+'%';}
 function fmtReal(n,yrs){
   if(!state.showInflationAdj)return fmt(n);
   return fmt(n/Math.pow(1+state.inflationRate,yrs))+'*';
@@ -320,11 +321,22 @@ function minDrawdownRate(age){
 function buildTimeline(st,returnOverrideFn){
   var rows=[];
   if(st.showActuals){
-    ACTUALS.forEach(function(a){
+    ACTUALS.forEach(function(a,i){
+      // Year-over-year balance growth from the real closing balances. This is
+      // NOT a pure investment-return figure — it also includes that year's
+      // concessional contributions, so it will run a few points hotter than
+      // the fund's actual market return, especially in earlier years when
+      // contributions were a bigger fraction of a smaller balance. Still a
+      // useful real-world ballpark for setting the forecast return sliders.
+      var prev=i>0?ACTUALS[i-1]:null;
+      var robReturn=prev&&prev.robOpen?(a.robOpen/prev.robOpen-1):null;
+      var tinaReturn=prev&&prev.tinaOpen?(a.tinaOpen/prev.tinaOpen-1):null;
+      var combinedReturn=prev&&(prev.robOpen+prev.tinaOpen)?((a.robOpen+a.tinaOpen)/(prev.robOpen+prev.tinaOpen)-1):null;
       rows.push({age:a.age,phase:'ACTUAL',stage:'',
         robClose:a.robOpen,tinaClose:a.tinaOpen,combinedClose:a.robOpen+a.tinaOpen,
         grossSpend:0,otherIncome:0,pension:0,robSpend:0,tinaSpend:0,
-        robCC:0,tinaCC:0,lsRob:0,lsTina:0,lsItems:[]});
+        robCC:0,tinaCC:0,lsRob:0,lsTina:0,lsItems:[],
+        robReturn:robReturn,tinaReturn:tinaReturn,combinedReturn:combinedReturn});
     });
   }
   var rBal=st.robSeed,tBal=st.tinaSeed;
@@ -1467,7 +1479,7 @@ function render(){
     // Timeline table
     var hasLS=rows.some(function(r){return r.lsItems&&r.lsItems.length>0;});
     var dispRows=state.showAllRows?rows:rows.slice(0,50);
-    var tblHeaders=['Age','Phase','Stage','Rob Close','Tina Close','Combined','Gross Spend','Other Inc','Pension'];
+    var tblHeaders=['Age','Phase','Stage','Rob Close','Tina Close','Combined','Net Return (YoY)','Gross Spend','Other Inc','Pension'];
     if(hasLS)tblHeaders.push('Events');
     var tblRows=dispRows.map(function(r){
       var isA=r.phase==='ACTUAL';
@@ -1476,6 +1488,7 @@ function render(){
       var cells=[
         String(r.age),isA?'Actual':'Forecast',r.stage||'—',
         fc(r.robClose),fc(r.tinaClose),fc(r.combinedClose),
+        isA&&r.combinedReturn!=null?fmtPctSigned(r.combinedReturn):'—',
         r.grossSpend?fc(r.grossSpend):'—',
         r.otherIncome?fmt(r.otherIncome):'—',
         r.pension?fmt(r.pension):'—'
@@ -1489,6 +1502,30 @@ function render(){
       return cells;
     });
     var tblTitle='Timeline'+(state.showInflationAdj?' (★ = today\'s $)':'')+(state.showAllRows?'':' (first 50 rows)');
+
+    // Actuals return summary — a CAGR-based ballpark for setting the return
+    // sliders. Includes each year's concessional contributions, so it runs
+    // hotter than a pure investment-return figure would (contributions were
+    // a bigger share of a smaller balance in the early years especially).
+    var actualRows=rows.filter(function(r){return r.phase==='ACTUAL';});
+    if(actualRows.length>1){
+      var firstA=actualRows[0],lastA=actualRows[actualRows.length-1];
+      var yearsSpan=lastA.age-firstA.age;
+      function cagr(startVal,endVal){return yearsSpan>0&&startVal>0?Math.pow(endVal/startVal,1/yearsSpan)-1:null;}
+      var robCagr=cagr(firstA.robClose,lastA.robClose);
+      var tinaCagr=cagr(firstA.tinaClose,lastA.tinaClose);
+      var combCagr=cagr(firstA.combinedClose,lastA.combinedClose);
+      var yoyRob=actualRows.map(function(r){return r.robReturn;}).filter(function(v){return v!=null;});
+      var yoyTina=actualRows.map(function(r){return r.tinaReturn;}).filter(function(v){return v!=null;});
+      var avg=function(a){return a.length?a.reduce(function(s,v){return s+v;},0)/a.length:null;};
+      rightCol.appendChild(panel('Actual Fund Growth (age '+firstA.age+'→'+lastA.age+', '+yearsSpan+' years)',el('div',{style:{fontSize:'12px',color:'#c0c5d8',lineHeight:'1.8'}},[
+        el('div',{},[el('span',{style:{fontWeight:'900',color:'#6c8ef0'}},'Rob: '),(robCagr!=null?fmtPctSigned(robCagr)+'/yr compound (CAGR)':'—')+', '+(avg(yoyRob)!=null?fmtPctSigned(avg(yoyRob))+'/yr simple average':'')]),
+        el('div',{},[el('span',{style:{fontWeight:'900',color:'#a06cf0'}},'Tina: '),(tinaCagr!=null?fmtPctSigned(tinaCagr)+'/yr compound (CAGR)':'—')+', '+(avg(yoyTina)!=null?fmtPctSigned(avg(yoyTina))+'/yr simple average':'')]),
+        el('div',{},[el('span',{style:{fontWeight:'900',color:'#5dd87a'}},'Combined: '),(combCagr!=null?fmtPctSigned(combCagr)+'/yr compound (CAGR)':'—')]),
+        el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'6px'}},'These include each year\'s concessional contributions, not just investment performance — balance growth = contributions + returns, and this can\'t separate the two. Contributions were a bigger share of the balance in earlier years, so treat this as an upper-bound ballpark for the Returns sliders, not a like-for-like market return.')
+      ])));
+    }
+
     rightCol.appendChild(panel('Sensitivity: Balance at Age '+state.endAge,sensitivityTable()));
     rightCol.appendChild(panel(tblTitle,el('div',{},[
       mkTbl(tblHeaders,tblRows),
@@ -1502,9 +1539,10 @@ function render(){
           onClick:function(){
             // Full dataset (all rows, not just the displayed slice), raw
             // numbers rather than formatted strings, so it's usable in Excel.
-            var csvHeaders=['Age','Phase','Stage','RobClose','TinaClose','Combined','GrossSpend','OtherIncome','Pension','RobCC','TinaCC','RobNCC','TinaNCC','RobDiv293Tax','TinaDiv293Tax'];
+            var csvHeaders=['Age','Phase','Stage','RobClose','TinaClose','Combined','RobYoYReturn','TinaYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','Pension','RobCC','TinaCC','RobNCC','TinaNCC','RobDiv293Tax','TinaDiv293Tax'];
             var csvRows=rows.map(function(r){
               return [r.age,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
+                r.robReturn!=null?r.robReturn:'',r.tinaReturn!=null?r.tinaReturn:'',r.combinedReturn!=null?r.combinedReturn:'',
                 r.grossSpend||0,r.otherIncome||0,r.pension||0,r.robCC||0,r.tinaCC||0,
                 r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
             });
