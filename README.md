@@ -1,4 +1,4 @@
-# Super Calculator (V11)
+# Super Calculator (V12)
 
 Offline‑first Australian retirement and superannuation modelling tool.
 
