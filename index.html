@@ -1312,7 +1312,7 @@ function render(){
       d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},
         'Legacy: '+legacyYears+' year'+(legacyYears===1?'':'s')+' — whatever\'s left of the horizon after Golden+Silver, not a separate slider.'));
     })();
-    d.appendChild(sld('Split when both retired (Rob %)',0,100,5,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
+    d.appendChild(sld('Split when both retired (Rob %)',0,100,1,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
     return d;
   }));
 
