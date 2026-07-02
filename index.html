@@ -165,7 +165,10 @@ function defaultState(){
     // paying down loans/debt. Purely informational: shown in the Other Inc
     // column in a different colour so it's not confused with real invested
     // income, but never added to netSpend, otherIncome, or the pension test.
-    debtPaydown:{enabled:true,startAge:55,endAge:60,amount:32000},
+    // Grows at its own fixed rate (not the global CPI/indexation toggle) —
+    // locked at 1.5% p.a. for this 5-year period regardless of what the
+    // Auto-escalate setting elsewhere is doing.
+    debtPaydown:{enabled:true,startAge:55,endAge:60,amount:32000,growthRate:0.015},
     usePension:true,
     homeowner:true,
     // Age Pension figures: 20 Mar 2026 – 19 Sep 2026 Services Australia rates
@@ -414,10 +417,13 @@ function buildTimeline(st,returnOverrideFn){
     // the pension test, or netSpend below — purely noted for the timeline
     // table so it's visible that cash is flowing in during these years, just
     // not into anything this model tracks. Real Other Income (above) starts
-    // separately at otherIncomeStartAge+1.
+    // separately at otherIncomeStartAge+1. Grows at its own fixed rate,
+    // independent of the global CPI/indexation toggle and rate — anchored to
+    // its own startAge, not BASE_AGE, so it behaves the same however the
+    // start age is configured.
     var debtPaydownCash=0;
     if(st.debtPaydown&&st.debtPaydown.enabled&&age>=st.debtPaydown.startAge&&age<=st.debtPaydown.endAge){
-      debtPaydownCash=idx(st.debtPaydown.amount,age,st);
+      debtPaydownCash=st.debtPaydown.amount*Math.pow(1+(st.debtPaydown.growthRate||0),age-st.debtPaydown.startAge);
     }
     // ── Age pension ─────────────────────────────────────────────────────────
     // Pension thresholds/rates are indexed forward from today (BASE_AGE) so a
@@ -1305,11 +1311,12 @@ function render(){
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},
       'Cash flowing in before Other Income proper starts at 61, that isn\'t invested and isn\'t available to fund spend — it\'s going straight to paying down loans/debt. Shown in amber in the Timeline\'s Other Inc column so it\'s clearly not the same thing as real invested income; it never affects the super balance, drawdown, or the pension test.'));
     d.appendChild(tog(state.debtPaydown.enabled?'Debt paydown cash: ON':'Debt paydown cash: OFF',state.debtPaydown.enabled,function(){state.debtPaydown.enabled=!state.debtPaydown.enabled;render();}));
-    d.appendChild(sld('Amount ($/yr, this year)',0,100000,1000,state.debtPaydown.amount,fmt(state.debtPaydown.amount),function(v){state.debtPaydown.amount=v;render();}));
+    d.appendChild(sld('Amount ($/yr, at start age)',0,100000,1000,state.debtPaydown.amount,fmt(state.debtPaydown.amount),function(v){state.debtPaydown.amount=v;render();}));
     d.appendChild(sld('From age',55,70,1,state.debtPaydown.startAge,String(state.debtPaydown.startAge),function(v){state.debtPaydown.startAge=v;render();}));
     d.appendChild(sld('To age (inclusive)',55,70,1,state.debtPaydown.endAge,String(state.debtPaydown.endAge),function(v){state.debtPaydown.endAge=v;render();}));
+    d.appendChild(sld('Growth rate (fixed, not CPI)',0,8,0.1,state.debtPaydown.growthRate*100,(state.debtPaydown.growthRate*100).toFixed(1)+'%',function(v){state.debtPaydown.growthRate=v/100;render();}));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'4px'}},
-      state.indexation&&state.indexation.enabled?'Escalates at '+fmtPct(state.inflationRate)+' CPI each year (uses the same auto-escalation toggle as caps/pension thresholds).':'Auto-escalation is off, so this stays flat at '+fmt(state.debtPaydown.amount)+'/yr.'));
+      'Locked at this rate regardless of the Auto-escalate/CPI setting used elsewhere — deliberately separate since it\'s a fixed loan-paydown schedule, not something tied to inflation.'));
     return d;
   }));
 
