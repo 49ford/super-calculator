@@ -93,7 +93,6 @@ var ACTUALS=[
   {age:54,robOpen:934773.08,tinaOpen:729006.22}
 ];
 var FINAL_ACTUAL_CLOSE={rob:934773.08,tina:729006.22};
-var HORIZON=41;
 // BASE_AGE = "this year" (FY2026-27) — the anchor every indexed figure (caps,
 // pension thresholds, TBC, CPI-escalated spend) grows forward from. Age 54
 // closed out FY25-26 and is now an ACTUAL row (see ACTUALS above), so the
@@ -128,8 +127,14 @@ function idx(v,age,st){
   if(!st.indexation||!st.indexation.enabled)return v;
   return v*Math.pow(1+st.inflationRate,Math.max(0,age-BASE_AGE));
 }
-function thirdSize(){return Math.ceil(HORIZON/3);}
-function stageIdx(i){var t=thirdSize();return i<t?0:i<t*2?1:2;}
+// Golden/Silver/Legacy phase lengths are user-adjustable (spendYearsGolden,
+// spendYearsSilver) rather than a fixed rigid split of the horizon — Legacy
+// is simply whatever's left after Golden+Silver years have elapsed, however
+// long or short that ends up being for a given retirement age/horizon.
+function stageIdx(yIdx,st){
+  var g=Math.max(0,st.spendYearsGolden||0),s=Math.max(0,st.spendYearsSilver||0);
+  return yIdx<g?0:yIdx<g+s?1:2;
+}
 function stageName(s){return['Golden','Silver','Legacy'][s];}
 
 // ─── Default state ─────────────────────────────────────────────────────────
@@ -153,6 +158,13 @@ function defaultState(){
     spendSilver:210000,
     spendLegacy:285000,
     spendPhase:'Golden',
+    // How many years each spend phase runs before rolling to the next.
+    // Legacy has no explicit length — it's simply whatever's left once
+    // Golden+Silver years have elapsed, however long or short that is for a
+    // given retirement age and horizon. Defaults (14/14) match the old fixed
+    // even-thirds split this replaced.
+    spendYearsGolden:14,
+    spendYearsSilver:14,
     splitPct:55,
     otherAssetsBuckets:{realestate:500000,shares:0,other:0},
     otherAssetsBucket:'realestate',
@@ -377,7 +389,8 @@ function buildTimeline(st,returnOverrideFn){
     }
     var anyRet=!rWork||!tWork,bothRet=!rWork&&!tWork;
     var yIdx=(anyRet&&age>earliestRetire)?(age-earliestRetire-1):-1;
-    var stage=yIdx>=0?stageName(stageIdx(yIdx)):(anyRet&&age===earliestRetire?'Retiring':'');
+    var stageI=yIdx>=0?stageIdx(yIdx,st):-1;
+    var stage=stageI>=0?stageName(stageI):(anyRet&&age===earliestRetire?'Retiring':'');
     // Retirement returns (+ optional pension-phase tax boost).
     // Transfer Balance Cap: any balance above the (indexed) cap can't sit in
     // the tax-free pension phase — it's modelled as remaining in
@@ -449,7 +462,7 @@ function buildTimeline(st,returnOverrideFn){
     // to nominal terms at the CPI rate (consistent with the pension/cap
     // indexation above), so the "Real $" display toggle reverses a matching
     // escalation rather than un-inflating a figure that never grew.
-    var baseSpend=yIdx>=0?(yIdx<thirdSize()?st.spendGolden:yIdx<thirdSize()*2?st.spendSilver:st.spendLegacy):0;
+    var baseSpend=stageI===0?st.spendGolden:stageI===1?st.spendSilver:stageI===2?st.spendLegacy:0;
     var grossSpend=baseSpend>0?idx(baseSpend,age,st):0;
     var netSpend=Math.max(0,grossSpend-pension-otherIncome-ptIncome);
     var rSpend=0,tSpend=0;
@@ -1282,6 +1295,14 @@ function render(){
     function setSpend(v){if(state.spendPhase==='Golden')state.spendGolden=v;else if(state.spendPhase==='Silver')state.spendSilver=v;else state.spendLegacy=v;render();}
     d.appendChild(sld(state.spendPhase+' spend',state.spendMin,state.spendMax,5000,cur,fmt(cur),setSpend));
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},'G='+fmt(state.spendGolden)+' | S='+fmt(state.spendSilver)+' | L='+fmt(state.spendLegacy)+(state.indexation&&state.indexation.enabled?' (today\'s $, escalated at '+fmtPct(state.inflationRate)+' in projection)':' (flat nominal — enable auto-escalation under Concessional Caps to grow with CPI)')));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'10px 0 3px',fontWeight:'700'}},'How many years in each phase'));
+    d.appendChild(sld('Golden years',1,40,1,state.spendYearsGolden,state.spendYearsGolden+(state.spendYearsGolden===1?' yr':' yrs'),function(v){state.spendYearsGolden=v;render();}));
+    d.appendChild(sld('Silver years',1,40,1,state.spendYearsSilver,state.spendYearsSilver+(state.spendYearsSilver===1?' yr':' yrs'),function(v){state.spendYearsSilver=v;render();}));
+    (function(){
+      var legacyYears=rows.filter(function(r){return r.stage==='Legacy';}).length;
+      d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},
+        'Legacy: '+legacyYears+' year'+(legacyYears===1?'':'s')+' — whatever\'s left of the horizon after Golden+Silver, not a separate slider.'));
+    })();
     d.appendChild(sld('Split when both retired (Rob %)',0,100,5,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
     return d;
   }));
