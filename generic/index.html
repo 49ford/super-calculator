@@ -94,7 +94,24 @@ var FINAL_ACTUAL_CLOSE={rob:0,tina:0};
 // Timeline/chart is computed from this plus each person's current age, so
 // the tool stays correct without anyone needing to update it by hand.
 var START_YEAR=(new Date()).getFullYear();
+// Every row/chart/table in this app is keyed by "your age" (robAge) as its
+// x-axis — that's what `age` means everywhere below unless a variable is
+// explicitly named tinaAge/partnerAge. Two people can have different
+// current ages, so a Partner-space age (e.g. state.tinaRetireAge) can't be
+// compared directly against a robAge value — it has to be translated first.
 function yearForAge(age){return START_YEAR+(age-state.startAge);}
+// Years from now until a given person (their current age + their target
+// retirement age) retires. Comparing these — not the raw retirement ages —
+// is what actually tells you who retires in the earlier calendar year.
+function yearsToRetire(personStartAge,personRetireAge){return personRetireAge-personStartAge;}
+function earliestRetireYearOffset(st){
+  return Math.min(yearsToRetire(st.startAge,st.robRetireAge),yearsToRetire(st.tinaStartAge,st.tinaRetireAge));
+}
+// Translate a Partner-space age (e.g. state.tinaRetireAge, or an age at
+// which some Partner-specific event happens) into the equivalent robAge —
+// i.e. what your age will be at that same calendar point — so it can be
+// plotted/compared on the shared robAge x-axis used throughout.
+function ageEquivalent(st,partnerAge){return st.startAge+(partnerAge-st.tinaStartAge);}
 // Concessional cap for a given projection age. Age 54's cap was a one-off
 // (their actual, now-historical FY25-26 contribution year, captured in
 // ACTUALS rather than modelled here). From age 55 (FY26-27, confirmed
@@ -140,11 +157,17 @@ function defaultState(){
     tab:'super',
     showActuals:false,
     showAllRows:false,
-    // Your current age — every "Year" shown in the Timeline/chart is
-    // computed from this. Australian super law (preservation age,
-    // Age Pension eligibility, minimum drawdown bands) still runs on real
-    // age under the hood; only the display is calendar-year based.
+    // Your and your partner's current ages — can differ. Every "Year" shown
+    // in the Timeline/chart is computed from YOUR age (startAge); Partner's
+    // age each year is tracked separately (startAge + years elapsed vs
+    // tinaStartAge + years elapsed), so two different current ages produce
+    // two different retirement calendar years, accumulation windows, and
+    // ATO minimum-drawdown/Age-Pension-eligibility triggers. Australian
+    // super law (preservation age, Age Pension eligibility, minimum
+    // drawdown bands) runs on each person's real age under the hood; only
+    // the display is calendar-year based.
     startAge:45,
+    tinaStartAge:45,
     endAge:90,
     robRetireAge:60,
     tinaRetireAge:60,
@@ -343,7 +366,11 @@ function buildTimeline(st,returnOverrideFn){
     });
   }
   var rBal=st.robSeed,tBal=st.tinaSeed;
-  var earliestRetire=Math.min(st.robRetireAge,st.tinaRetireAge);
+  // Earliest retirement expressed as a year-offset from now (NOT a raw age
+  // comparison — with two different current ages, whoever has the smaller
+  // "years until their retirement age" gap retires first in calendar time,
+  // regardless of whose retirement age number is numerically smaller).
+  var earliestRetireOffset=earliestRetireYearOffset(st);
   var totalOther=otherTotal();
   var robOverTBC=false,tinaOverTBC=false; // set once either balance first exceeds the TBC in pension phase
   // ATO minimum drawdown can force more out of super than the year's desired
@@ -354,8 +381,14 @@ function buildTimeline(st,returnOverrideFn){
   // shows up as real household wealth (Net Worth chart/rows, CSV) instead of
   // disappearing.
   var excessMDBal=0;
-  for(var age=st.startAge;age<=st.endAge;age++){
-    var rWork=age<st.robRetireAge,tWork=age<st.tinaRetireAge;
+  // `age` is always "your age" (robAge) — the shared x-axis every row/chart
+  // is keyed by. `tinaAge` tracks Partner's own age in parallel (they can be
+  // a different age to you), so retirement timing, contribution windows,
+  // minimum-drawdown bands and Age Pension eligibility are each evaluated
+  // against the right person's real age, not a shared counter.
+  for(var age=st.startAge,tinaAge=st.tinaStartAge;age<=st.endAge;age++,tinaAge++){
+    var yearOffset=age-st.startAge;
+    var rWork=age<st.robRetireAge,tWork=tinaAge<st.tinaRetireAge;
     var rCC=rWork?ccCapForAge(age,st):0;
     var tCC=tWork?ccCapForAge(age,st):0;
     // Division 293: extra 15% tax on concessional contributions when
@@ -371,16 +404,16 @@ function buildTimeline(st,returnOverrideFn){
     // Accumulation returns
     if(rWork){var nr=rCC*(1-st.contribTax)-rDiv293,br=rBal+nr;rBal=br+br*st.robWorkReturn;}
     if(tWork){var nt=tCC*(1-st.contribTax)-tDiv293,bt=tBal+nt;tBal=bt+bt*st.tinaWorkReturn;}
-    // Non-concessional contributions (no tax, any phase)
+    // Non-concessional contributions (no tax, any phase) — window is each
+    // person's own age, since "contribute from 55 to 60" naturally means
+    // when THAT PERSON is 55-60, not when your age happens to be 55-60.
     var robNCC=0,tinaNCC=0;
-    if(st.ncc&&st.ncc.enabled&&age>=st.ncc.startAge&&age<=st.ncc.endAge){
-      robNCC=st.ncc.robAnnual||0;tinaNCC=st.ncc.tinaAnnual||0;
-      rBal+=robNCC;tBal+=tinaNCC;
-    }
+    if(st.ncc&&st.ncc.enabled&&age>=st.ncc.startAge&&age<=st.ncc.endAge){robNCC=st.ncc.robAnnual||0;rBal+=robNCC;}
+    if(st.ncc&&st.ncc.enabled&&tinaAge>=st.ncc.startAge&&tinaAge<=st.ncc.endAge){tinaNCC=st.ncc.tinaAnnual||0;tBal+=tinaNCC;}
     var anyRet=!rWork||!tWork,bothRet=!rWork&&!tWork;
-    var yIdx=(anyRet&&age>earliestRetire)?(age-earliestRetire-1):-1;
+    var yIdx=(anyRet&&yearOffset>earliestRetireOffset)?(yearOffset-earliestRetireOffset-1):-1;
     var stageI=yIdx>=0?stageIdx(yIdx,st):-1;
-    var stage=stageI>=0?stageName(stageI):(anyRet&&age===earliestRetire?'Retiring':'');
+    var stage=stageI>=0?stageName(stageI):(anyRet&&yearOffset===earliestRetireOffset?'Retiring':'');
     // Retirement returns (+ optional pension-phase tax boost).
     // Transfer Balance Cap: any balance above the (indexed) cap can't sit in
     // the tax-free pension phase — it's modelled as remaining in
@@ -429,10 +462,14 @@ function buildTimeline(st,returnOverrideFn){
       debtPaydownCash=st.debtPaydown.amount*Math.pow(1+(st.debtPaydown.growthRate||0),age-st.debtPaydown.startAge);
     }
     // ── Age pension ─────────────────────────────────────────────────────────
-    // Pension thresholds/rates are indexed forward from today (your current age) so a
-    // 40-year projection doesn't apply 2026 settings unchanged out to age 90.
+    // Pension thresholds/rates are indexed forward from today (calendar
+    // year, via `age`/robAge) so a 40-year projection doesn't apply 2026
+    // settings unchanged decades out. Eligibility itself is gated on
+    // whichever partner is OLDER reaching 67 first — in reality a couple
+    // can start receiving a (combined-assets-tested) pension once the elder
+    // partner reaches Age Pension age, even if the other hasn't yet.
     var pension=0;
-    if(st.usePension&&anyRet&&age>=67){
+    if(st.usePension&&anyRet&&Math.max(age,tinaAge)>=67){
       pension=estimateAgePension({
         financialAssets:rBal+tBal+totalOther,homeowner:st.homeowner,
         fullPension:idx(st.fullPension,age,st),assetThreshold:idx(st.assetThreshold,age,st),
@@ -442,10 +479,11 @@ function buildTimeline(st,returnOverrideFn){
       });
     }
     // ── Part-time / phased retirement income ────────────────────────────────
+    // Each person's own window, against their own age.
     var ptIncome=0;
     if(st.partTime&&st.partTime.enabled){
       if(age>st.robRetireAge&&age<=st.partTime.robEndAge)ptIncome+=st.partTime.robAmount||0;
-      if(age>st.tinaRetireAge&&age<=st.partTime.tinaEndAge)ptIncome+=st.partTime.tinaAmount||0;
+      if(tinaAge>st.tinaRetireAge&&tinaAge<=st.partTime.tinaEndAge)ptIncome+=st.partTime.tinaAmount||0;
     }
     // ── Spend ────────────────────────────────────────────────────────────────
     // Golden/Silver/Legacy sliders are treated as today's dollars and grown
@@ -466,11 +504,13 @@ function buildTimeline(st,returnOverrideFn){
       else{tSpend=Math.min(tBal,netSpend);}
     }
     // ── Minimum drawdown enforcement (ATO) ──────────────────────────────────
+    // Each person's mandatory % is set by their OWN age band (4% at 60-64,
+    // 5% at 65-74, etc.) — not a shared age, since the bands are genuinely
+    // age-based law that applies per individual.
     var rSpendBeforeMD=rSpend,tSpendBeforeMD=tSpend;
-    if(st.minDrawdown&&st.minDrawdown.enabled&&age>=(st.minDrawdown.startAge||61)){
-      var mdRate=minDrawdownRate(age);
-      if(!rWork){var robMD=rBal*mdRate;if(robMD>rSpend)rSpend=Math.min(rBal,robMD);}
-      if(!tWork){var tinaMD=tBal*mdRate;if(tinaMD>tSpend)tSpend=Math.min(tBal,tinaMD);}
+    if(st.minDrawdown&&st.minDrawdown.enabled){
+      if(!rWork&&age>=(st.minDrawdown.startAge||61)){var robMD=rBal*minDrawdownRate(age);if(robMD>rSpend)rSpend=Math.min(rBal,robMD);}
+      if(!tWork&&tinaAge>=(st.minDrawdown.startAge||61)){var tinaMD=tBal*minDrawdownRate(tinaAge);if(tinaMD>tSpend)tSpend=Math.min(tBal,tinaMD);}
     }
     rBal=Math.max(0,rBal-rSpend);
     tBal=Math.max(0,tBal-tSpend);
@@ -480,7 +520,7 @@ function buildTimeline(st,returnOverrideFn){
     var excessMDThisYear=Math.max(0,rSpend-rSpendBeforeMD)+Math.max(0,tSpend-tSpendBeforeMD);
     var mdGrowthRate=returnOverrideFn?returnOverrideFn(age):st.retireReturn;
     excessMDBal=excessMDBal*(1+mdGrowthRate)+excessMDThisYear;
-    rows.push({age,phase:'FORECAST',stage,
+    rows.push({age,tinaAge,phase:'FORECAST',stage,
       robClose:rBal,tinaClose:tBal,combinedClose:rBal+tBal,
       grossSpend,otherIncome,debtPaydownCash,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
       excessMDCash:excessMDBal,
@@ -496,12 +536,12 @@ function buildTimelineB(){
 }
 function buildShockTimeline(){
   if(!state.shock.enabled)return null;
-  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
-  var shockStart=er+(state.shock.startOffset-1);
-  var shockEnd=shockStart+state.shock.durationYears-1;
+  var shockStartOffset=earliestRetireYearOffset(state)+(state.shock.startOffset-1);
+  var shockEndOffset=shockStartOffset+state.shock.durationYears-1;
   var shockRet=state.shock.type==='crash'?-(state.shock.magnitude/100):(state.shock.magnitude/100);
   return buildTimeline(state,function(age){
-    if(age>=shockStart&&age<=shockEnd)return shockRet;
+    var yearOffset=age-state.startAge;
+    if(yearOffset>=shockStartOffset&&yearOffset<=shockEndOffset)return shockRet;
     return state.retireReturn;
   });
 }
@@ -511,7 +551,7 @@ function buildMonteCarloRows(){
   if(!state.monteCarlo||!state.monteCarlo.enabled)return null;
   var runs=Math.min(state.monteCarlo.runs||300,500);
   var sigma=(state.monteCarlo.stdDev||10)/100;
-  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var erRobAge=state.startAge+earliestRetireYearOffset(state);
   var seed=54321;
   function rng(){seed=((seed*1664525+1013904223)>>>0);return seed/4294967296;}
   function randn(){var u=Math.max(1e-9,rng()),v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(6.2831853*v);}
@@ -521,7 +561,7 @@ function buildMonteCarloRows(){
   for(var i=0;i<runs;i++){
     var rm={};
     for(var a=state.startAge;a<=state.endAge;a++){
-      var mean=a<er?state.robWorkReturn:state.retireReturn;
+      var mean=a<erRobAge?state.robWorkReturn:state.retireReturn;
       rm[a]=Math.max(-0.5,Math.min(0.6,mean+sigma*randn()));
     }
     var ovFn=function(age){return rm[age]!==undefined?rm[age]:state.retireReturn;};
@@ -617,7 +657,7 @@ function buildSensitivity(){
 
 // ─── Net worth rows ────────────────────────────────────────────────────────
 function netWorthRows(rows){
-  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var er=state.startAge+earliestRetireYearOffset(state);
   var hv=state.netWorth?state.netWorth.homeValue:0;
   var hc=state.netWorth?state.netWorth.homeCpi:0.04;
   var oa=otherTotal();
@@ -1048,8 +1088,12 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
       stroke:col,'stroke-width':'1','stroke-dasharray':'4,3',opacity:'0.65'}));
     svg.appendChild(svgEl('text',{x:String(xx+3),y:String(pT+11),fill:col,style:'font-size:10px;font-weight:bold'},label));
   }
+  // state.tinaRetireAge is a Partner-space age — translate to the shared
+  // robAge x-axis (what YOUR age will be when Partner retires) before it
+  // can be plotted alongside state.robRetireAge.
+  var partnerRetireRobAge=ageEquivalent(state,state.tinaRetireAge);
   addMarker(state.robRetireAge,'You '+yearForAge(state.robRetireAge),'#6c8ef0');
-  if(state.tinaRetireAge!==state.robRetireAge)addMarker(state.tinaRetireAge,'Partner '+yearForAge(state.tinaRetireAge),'#a06cf0');
+  if(partnerRetireRobAge!==state.robRetireAge)addMarker(partnerRetireRobAge,'Partner '+yearForAge(partnerRetireRobAge),'#a06cf0');
 
   // Monte Carlo band (p10–p90)
   if(mcRows&&mcRows.length>1){
@@ -1076,7 +1120,7 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
     // Shade shock band between base and shock
     var shockPts=rowsShock.map(function(r,i){return xp(r.age).toFixed(1)+','+yp(r.combinedClose).toFixed(1);}).join(' ');
     var basePts=rows.filter(function(r){return r.phase==='FORECAST';}).map(function(r){return xp(r.age).toFixed(1)+','+yp(r.combinedClose).toFixed(1);}).join(' ');
-    var er2=Math.min(state.robRetireAge,state.tinaRetireAge);
+    var er2=state.startAge+earliestRetireYearOffset(state);
     var shockStartX=xp(er2+(state.shock.startOffset-1));
     var shockEndX=xp(er2+(state.shock.startOffset-1)+state.shock.durationYears-1);
     svg.appendChild(svgEl('rect',{x:String(shockStartX),y:String(pT),width:String(Math.max(0,shockEndX-shockStartX)),height:String(H-pT-pB),fill:shockCol,opacity:'0.07'}));
@@ -1172,7 +1216,7 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
 
 // ─── Adviser narrative ─────────────────────────────────────────────────────
 function narrative(rows){
-  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var er=state.startAge+earliestRetireYearOffset(state);
   var aR=rows.filter(function(r){return r.age===er;})[0]||rows[0];
   var a67=rows.filter(function(r){return r.age===67;})[0];
   var a90=rows.filter(function(r){return r.age===90;})[0]||rows[rows.length-1];
@@ -1182,7 +1226,7 @@ function narrative(rows){
   var ls=state.lumpSums;
   var lines=[];
   lines.push('<strong>Retirement Outlook — Summary</strong><br><br>');
-  lines.push('You retire at <strong>age '+state.robRetireAge+'</strong> (year '+yearForAge(state.robRetireAge)+') and your partner at <strong>age '+state.tinaRetireAge+'</strong> (year '+yearForAge(state.tinaRetireAge)+'), with a combined super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at earliest retirement (You '+fmt(aR.robClose)+' | Partner '+fmt(aR.tinaClose)+').<br><br>');
+  lines.push('You retire at <strong>age '+state.robRetireAge+'</strong> (year '+yearForAge(state.robRetireAge)+') and your partner at <strong>age '+state.tinaRetireAge+'</strong> (year '+yearForAge(ageEquivalent(state,state.tinaRetireAge))+'), with a combined super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at earliest retirement (You '+fmt(aR.robClose)+' | Partner '+fmt(aR.tinaClose)+').<br><br>');
   if(state.robRetireAge<60||state.tinaRetireAge<60){
     lines.push('⚠️ <strong>Below preservation age:</strong> '+(state.robRetireAge<60?'Your':'')+(state.robRetireAge<60&&state.tinaRetireAge<60?' and ':'')+(state.tinaRetireAge<60?'Partner\'s':'')+' planned retirement age is under the general preservation age of 60 — early access to super requires meeting a condition of release.<br><br>');
   }
@@ -1203,7 +1247,7 @@ function narrative(rows){
   if(state.tbc&&state.tbc.enabled){
     var robTBCRow2=rows.filter(function(r){return r.phase==='FORECAST'&&r.robOverTBC;})[0];
     var tinaTBCRow2=rows.filter(function(r){return r.phase==='FORECAST'&&r.tinaOverTBC;})[0];
-    if(robTBCRow2||tinaTBCRow2){lines.push('🏦 <strong>Transfer Balance Cap:</strong> '+(robTBCRow2?'Your balance exceeds the cap from age '+robTBCRow2.age+'. ':'')+(tinaTBCRow2?'Partner\'s balance exceeds the cap from age '+tinaTBCRow2.age+'. ':'')+'The excess is modelled as remaining in accumulation phase, taxed at 15% on earnings rather than the pension-phase 0%.<br><br>');}
+    if(robTBCRow2||tinaTBCRow2){lines.push('🏦 <strong>Transfer Balance Cap:</strong> '+(robTBCRow2?'Your balance exceeds the cap from age '+robTBCRow2.age+'. ':'')+(tinaTBCRow2?'Partner\'s balance exceeds the cap from age '+tinaTBCRow2.tinaAge+'. ':'')+'The excess is modelled as remaining in accumulation phase, taxed at 15% on earnings rather than the pension-phase 0%.<br><br>');}
   }
   if(state.shock&&state.shock.enabled){
     var sRows2=buildShockTimeline();
@@ -1238,12 +1282,14 @@ root.style.cssText='height:100vh;display:flex;flex-direction:column;overflow:hid
 // otherwise silently load garbage numbers into the model with no warning.
 function isValidScenarioShape(obj){
   if(!obj||typeof obj!=='object')return false;
-  var numFields=['robRetireAge','tinaRetireAge','endAge','spendGolden','spendSilver','spendLegacy','robSeed','tinaSeed'];
+  var numFields=['startAge','tinaStartAge','robRetireAge','tinaRetireAge','endAge','spendGolden','spendSilver','spendLegacy','robSeed','tinaSeed'];
   for(var i=0;i<numFields.length;i++){
     var v=obj[numFields[i]];
     if(v===undefined)continue; // deepMerge will fill missing fields from defaults
     if(typeof v!=='number'||!isFinite(v)||v<0)return false;
   }
+  if(obj.startAge!==undefined&&(obj.startAge<18||obj.startAge>100))return false;
+  if(obj.tinaStartAge!==undefined&&(obj.tinaStartAge<18||obj.tinaStartAge>100))return false;
   if(obj.robRetireAge!==undefined&&(obj.robRetireAge<40||obj.robRetireAge>100))return false;
   if(obj.tinaRetireAge!==undefined&&(obj.tinaRetireAge<40||obj.tinaRetireAge>100))return false;
   if(obj.endAge!==undefined&&(obj.endAge<40||obj.endAge>120))return false;
@@ -1325,7 +1371,7 @@ function render(){
   var oiFirstRow=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
   var mcRows=getMonteCarloRowsDebounced();
   var nwRows=netWorthRows(rows);
-  var er=Math.min(state.robRetireAge,state.tinaRetireAge);
+  var er=state.startAge+earliestRetireYearOffset(state);
   var aRet=rows.filter(function(r){return r.age===er;})[0]||rows[0];
   var a67=rows.filter(function(r){return r.age===67;})[0];
   var a90=rows.filter(function(r){return r.age===90;})[0]||rows[rows.length-1];
@@ -1353,6 +1399,8 @@ function render(){
     var d=el('div',{});
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'8px',lineHeight:'1.5'}},'This is a blank template — nothing below is pre-filled with anyone\'s real data. Enter your own numbers, in today\'s dollars.'));
     d.appendChild(sld('Your current age',18,75,1,state.startAge,String(state.startAge),function(v){state.startAge=v;render();}));
+    d.appendChild(sld('Partner\'s current age',18,75,1,state.tinaStartAge,String(state.tinaStartAge),function(v){state.tinaStartAge=v;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},'Can be different ages — retirement ages below are each applied to the right person\'s own age, so two different current ages give two different retirement years.'));
     d.appendChild(numI('Your current super balance ($)',state.robSeed,function(v){state.robSeed=v;render();},{step:5000,min:0}));
     d.appendChild(numI('Partner\'s current super balance ($)',state.tinaSeed,function(v){state.tinaSeed=v;render();},{step:5000,min:0}));
     return d;
@@ -1452,7 +1500,6 @@ function render(){
     if(state.shock.enabled){
       var sRows=buildShockTimeline();
       if(sRows){
-        var er3=Math.min(state.robRetireAge,state.tinaRetireAge);
         var sEnd=rows[rows.length-1];var ssEnd=sRows[sRows.length-1];
         var impact=ssEnd.combinedClose-sEnd.combinedClose;
         var impCol=impact>=0?'#5dd87a':'#f06c6c';
@@ -1476,20 +1523,27 @@ function render(){
     d.appendChild(sld('From age',45,75,1,state.ncc.startAge,String(state.ncc.startAge),function(v){state.ncc.startAge=v;render();}));
     d.appendChild(sld('To age',45,75,1,state.ncc.endAge,String(state.ncc.endAge),function(v){state.ncc.endAge=v;render();}));
     if(state.ncc.enabled){
-      var startRow=rows.filter(function(r){return r.age===state.ncc.startAge;})[0];
-      if(startRow){
-        var tbcNow=tbcCapForAge(state.ncc.startAge,state);
-        function eligLabel(tsb){
+      // Each person reaches "NCC start age" in a different calendar year if
+      // their current ages differ — look up each person's own row (matched
+      // on their own age field) rather than assuming one shared row works
+      // for both.
+      var robStartRow=rows.filter(function(r){return r.age===state.ncc.startAge;})[0];
+      var tinaStartRow=rows.filter(function(r){return r.tinaAge===state.ncc.startAge;})[0];
+      if(robStartRow||tinaStartRow){
+        var tbcNowForRob=tbcCapForAge(state.ncc.startAge,state);
+        var tbcNowForTina=tbcCapForAge(ageEquivalent(state,state.ncc.startAge),state);
+        function eligLabel(tsb,tbcNow){
           if(tsb>=tbcNow)return{txt:'Not eligible (TSB ≥ TBC of '+fmt(tbcNow)+')',col:'#f06c6c'};
           if(tsb<tbcNow-2*nccCapNow)return{txt:'3-yr bring-forward available ('+fmt(nccCapNow*3)+')',col:'#5dd87a'};
           if(tsb<tbcNow-1*nccCapNow)return{txt:'2-yr bring-forward available ('+fmt(nccCapNow*2)+')',col:'#5dd87a'};
           return{txt:'1-yr cap only, no bring-forward ('+fmt(nccCapNow)+')',col:'#f0b96c'};
         }
-        var rElig=eligLabel(startRow.robClose),tElig=eligLabel(startRow.tinaClose);
+        var rElig=robStartRow?eligLabel(robStartRow.robClose,tbcNowForRob):null;
+        var tElig=tinaStartRow?eligLabel(tinaStartRow.tinaClose,tbcNowForTina):null;
         d.appendChild(el('div',{style:{marginTop:'8px',padding:'8px',background:'#0a0c12',borderRadius:'8px',fontSize:'11px',lineHeight:'1.7'}},[
           el('div',{style:{color:'#c0c5d8',fontWeight:'700'}},'Eligibility at age '+state.ncc.startAge+' (TSB = projected super balance):'),
-          el('div',{style:{color:rElig.col}},'You ('+fmt(startRow.robClose)+'): '+rElig.txt),
-          el('div',{style:{color:tElig.col}},'Partner ('+fmt(startRow.tinaClose)+'): '+tElig.txt)
+          rElig?el('div',{style:{color:rElig.col}},'You ('+fmt(robStartRow.robClose)+'): '+rElig.txt):null,
+          tElig?el('div',{style:{color:tElig.col}},'Partner ('+fmt(tinaStartRow.tinaClose)+'): '+tElig.txt):null
         ]));
       }
     }
@@ -1591,7 +1645,7 @@ function render(){
       var tinaTBCctl=rows.filter(function(r){return r.phase==='FORECAST'&&r.tinaOverTBC;})[0];
       if(robTBCctl||tinaTBCctl){
         d.appendChild(el('div',{style:{marginTop:'8px',padding:'8px',background:'#0a0c12',borderRadius:'8px',fontSize:'11px',lineHeight:'1.6',color:'#f0b96c'}},
-          (robTBCctl?'You exceed the cap from age '+robTBCctl.age+'. ':'')+(tinaTBCctl?'Partner exceeds the cap from age '+tinaTBCctl.age+'.':'')));
+          (robTBCctl?'You exceed the cap from age '+robTBCctl.age+'. ':'')+(tinaTBCctl?'Partner exceeds the cap from age '+tinaTBCctl.tinaAge+'.':'')));
       }
     }
     return d;
@@ -1699,9 +1753,9 @@ function render(){
           onClick:function(){
             // Full dataset (all rows, not just the displayed slice), raw
             // numbers rather than formatted strings, so it's usable in Excel.
-            var csvHeaders=['Year','Age','Phase','Stage','YouClose','PartnerClose','Combined','YouYoYReturn','PartnerYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','YouCC','PartnerCC','YouNCC','PartnerNCC','YouDiv293Tax','PartnerDiv293Tax'];
+            var csvHeaders=['Year','Age','PartnerAge','Phase','Stage','YouClose','PartnerClose','Combined','YouYoYReturn','PartnerYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','YouCC','PartnerCC','YouNCC','PartnerNCC','YouDiv293Tax','PartnerDiv293Tax'];
             var csvRows=rows.map(function(r){
-              return [yearForAge(r.age),r.age,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
+              return [yearForAge(r.age),r.age,r.tinaAge,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
                 r.robReturn!=null?r.robReturn:'',r.tinaReturn!=null?r.tinaReturn:'',r.combinedReturn!=null?r.combinedReturn:'',
                 r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.tinaCC||0,
                 r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
@@ -1758,7 +1812,7 @@ function render(){
       var robTBCRow=rows.filter(function(r){return r.phase==='FORECAST'&&r.robOverTBC;})[0];
       var tinaTBCRow=rows.filter(function(r){return r.phase==='FORECAST'&&r.tinaOverTBC;})[0];
       if(robTBCRow||tinaTBCRow){
-        advTbl.push(['Transfer Balance Cap exceeded','You: '+(robTBCRow?'from age '+robTBCRow.age:'no')+' · Partner: '+(tinaTBCRow?'from age '+tinaTBCRow.age:'no'),
+        advTbl.push(['Transfer Balance Cap exceeded','You: '+(robTBCRow?'from age '+robTBCRow.age:'no')+' · Partner: '+(tinaTBCRow?'from age '+tinaTBCRow.tinaAge:'no'),
           'Excess above cap taxed at 15%, not 0%, in retirement']);
       }
     }
@@ -1786,7 +1840,11 @@ function render(){
     sbCtrl.appendChild(sld('B: Legacy spend',50000,500000,5000,sb.spendLegacy,fmt(sb.spendLegacy),function(v){sb.spendLegacy=v;render();}));
     rightCol.appendChild(panel('Scenario B Settings',sbCtrl));
     if(rowsB){
-      var erB=Math.min(sb.robRetireAge,sb.tinaRetireAge);
+      // sb (=state.scenarioB) doesn't carry its own startAge/tinaStartAge —
+      // Scenario B reuses the same two people's current ages, just with
+      // different retire-age/return/spend assumptions.
+      var erBOffset=Math.min(yearsToRetire(state.startAge,sb.robRetireAge),yearsToRetire(state.tinaStartAge,sb.tinaRetireAge));
+      var erB=state.startAge+erBOffset;
       var aRetB=rowsB.filter(function(r){return r.age===erB;})[0]||rowsB[0];
       var a90B=rowsB.filter(function(r){return r.age===90;})[0]||rowsB[rowsB.length-1];
       var exhB=rowsB.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
