@@ -1668,7 +1668,32 @@ function renderInner(){
       d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},
         'Legacy: '+legacyYears+' year'+(legacyYears===1?'':'s')+' — whatever\'s left of the horizon after Golden+Silver, not a separate slider.'));
     })();
-    if(state.hasPartner)d.appendChild(sld('Split when both retired ('+nameYou()+' %)',0,100,1,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
+    if(state.hasPartner){
+      // Custom control (not the shared sld() helper) so the slider can show
+      // both names flanking its ends — 50% in the middle is an even split;
+      // dragging toward either end leans spend toward that person. Function
+      // is unchanged: still a single 0-100 state.splitPct (% of net spend
+      // going to nameYou()) driving the exact same math as before.
+      var sp=state.splitPct;
+      var splitLbl='Spend split once both retired';
+      var splitDisp=nameYou()+' '+sp+'%  ·  '+namePartner()+' '+(100-sp)+'%';
+      d.appendChild(el('div',{style:{margin:'8px 0'}},[
+        el('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'4px'}},[
+          el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700'}},splitLbl),
+          el('div',{style:{fontSize:'12px',color:'#6c8ef0',fontFamily:'monospace'}},splitDisp)
+        ]),
+        el('input',{type:'range',min:'0',max:'100',step:'1',value:String(sp),
+          'aria-label':splitLbl+', currently '+splitDisp,
+          style:{width:'100%'},onInput:function(e){state.splitPct=numOr(e.target.value,0);render();}}),
+        el('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'2px'}},[
+          el('div',{style:{fontSize:'10px',color:'#5a6080',fontWeight:'700'}},'◀ '+namePartner()),
+          el('div',{style:{fontSize:'10px',color:'#5a6080'}},'50/50'),
+          el('div',{style:{fontSize:'10px',color:'#5a6080',fontWeight:'700'}},nameYou()+' ▶')
+        ])
+      ]));
+      d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',marginBottom:'6px',lineHeight:'1.4'}},
+        'Only applies once you\'re both retired and both drawing on your own super — drag toward '+nameYou()+' or '+namePartner()+' to lean the split their way. Before that, whoever\'s retired funds the spend alone.'));
+    }
     return d;
   }));
 
