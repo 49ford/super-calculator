@@ -1672,23 +1672,46 @@ function renderInner(){
     return d;
   }));
 
-  ctrl.appendChild(collSec('assets','Other Assets',function(){
+  ctrl.appendChild(collSec('assets','Other Assets & Property',function(){
     var d=el('div',{});
-    d.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'7px'}},[
-      segBtn('Real Estate',state.otherAssetsBucket==='realestate',function(){state.otherAssetsBucket='realestate';render();}),
-      segBtn('Shares',state.otherAssetsBucket==='shares',function(){state.otherAssetsBucket='shares';render();}),
-      segBtn('Other',state.otherAssetsBucket==='other',function(){state.otherAssetsBucket='other';render();})
-    ]));
-    var bv=state.otherAssetsBuckets[state.otherAssetsBucket]||0;
-    d.appendChild(sld('Principal',0,2000000,25000,bv,fmt(bv),function(v){state.otherAssetsBuckets[state.otherAssetsBucket]=v;render();}));
-    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'7px'}},'Total: '+fmt(tot)));
-    if(state.homeowner){d.appendChild(sld('Home value ($)',0,5000000,50000,state.netWorth.homeValue,fmt(state.netWorth.homeValue),function(v){state.netWorth.homeValue=v;render();}));d.appendChild(sld('Home CPI growth',0,10,0.1,state.netWorth.homeCpi*100,(state.netWorth.homeCpi*100).toFixed(1)+'%',function(v){state.netWorth.homeCpi=v/100;render();}));}
-    d.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'7px'}},[
-      segBtn('Yield',state.otherAssetsRateMode==='yield',function(){state.otherAssetsRateMode='yield';render();}),
-      segBtn('CPI',state.otherAssetsRateMode==='cpi',function(){state.otherAssetsRateMode='cpi';render();})
-    ]));
-    var rv=state.otherAssetsRateMode==='yield'?state.otherAssetsReturn:state.otherAssetsCpi;
-    d.appendChild(sld(state.otherAssetsRateMode==='yield'?'Yield %':'CPI %',0,12,0.05,rv*100,(rv*100).toFixed(2)+'%',function(v){if(state.otherAssetsRateMode==='yield')state.otherAssetsReturn=v/100;else state.otherAssetsCpi=v/100;render();}));
+    // ── Investment / other assets: pension-assessable, income-generating ──
+    d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',marginBottom:'2px'}},'Investment & Other Assets'));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-1px 0 8px',lineHeight:'1.4'}},
+      'Counted in the Age Pension assets test and, from age '+(state.otherIncomeStartAge+1)+', generate a combined income stream on top of super. Separate from your home below, which isn\'t counted here.'));
+    var bucketMeta={
+      realestate:{label:'Real Estate',fieldLabel:'Investment property value ($)',hint:'Residential or commercial investment property — not your home (that\'s set separately below).'},
+      shares:{label:'Shares',fieldLabel:'Share/investment portfolio value ($)',hint:'Shares, ETFs, managed funds and similar.'},
+      other:{label:'Other',fieldLabel:'Other assets value ($)',hint:'Anything else — savings outside super, vehicles, business assets, etc.'}
+    };
+    var bucketKeys=['realestate','shares','other'];
+    d.appendChild(el('div',{style:{display:'flex',gap:'5px',marginBottom:'7px'}},
+      bucketKeys.map(function(k){return segBtn(bucketMeta[k].label,state.otherAssetsBucket===k,function(){state.otherAssetsBucket=k;render();});})));
+    var curKey=state.otherAssetsBucket;
+    var bv=state.otherAssetsBuckets[curKey]||0;
+    d.appendChild(sld(bucketMeta[curKey].fieldLabel,0,2000000,25000,bv,fmt(bv),function(v){state.otherAssetsBuckets[curKey]=v;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-4px',marginBottom:'8px',lineHeight:'1.4'}},bucketMeta[curKey].hint));
+    // Always-visible breakdown of all three buckets so switching tabs never
+    // looks like the other two amounts vanished — each is independently
+    // remembered, only the editing slider above swaps between them.
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#7a8099',background:'#0a0c12',borderRadius:'8px',padding:'8px 10px',marginBottom:'10px'}},
+      bucketKeys.map(function(k){return bucketMeta[k].label+': '+fmt(state.otherAssetsBuckets[k]||0);}).join('  ·  ')+'  ·  Total: '+fmt(tot)));
+    d.appendChild(sld('Other income starts at age',50,75,1,state.otherIncomeStartAge,'from age '+(state.otherIncomeStartAge+1),function(v){state.otherIncomeStartAge=v;render();}));
+    d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',margin:'8px 0 4px'}},'Growth assumptions'));
+    d.appendChild(sld('Yield % (income from age '+(state.otherIncomeStartAge+1)+')',0,12,0.05,state.otherAssetsReturn*100,(state.otherAssetsReturn*100).toFixed(2)+'%',function(v){state.otherAssetsReturn=v/100;render();}));
+    d.appendChild(sld('CPI % (annual growth of that income)',0,10,0.1,state.otherAssetsCpi*100,(state.otherAssetsCpi*100).toFixed(2)+'%',function(v){state.otherAssetsCpi=v/100;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-4px',marginBottom:'4px',lineHeight:'1.4'}},
+      'Both apply together — Yield sets how much annual income the combined total above generates once it starts; CPI escalates that income each year after.'));
+
+    // ── Principal residence: net worth only, not pension-assessable ──
+    d.appendChild(el('div',{style:{borderTop:'1px solid #252a3a',margin:'14px 0 10px'}}));
+    d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',marginBottom:'2px'}},'Principal Residence'));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-1px 0 8px',lineHeight:'1.4'}},
+      'Your home. Shown in the Net Worth chart only — not counted in the Age Pension assets test above, doesn\'t generate income, and can\'t be drawn down to fund spending.'));
+    d.appendChild(tog(state.homeowner?'Homeowner: YES':'Homeowner: NO',state.homeowner,function(){state.homeowner=!state.homeowner;render();}));
+    if(state.homeowner){
+      d.appendChild(sld('Home value ($)',0,5000000,50000,state.netWorth.homeValue,fmt(state.netWorth.homeValue),function(v){state.netWorth.homeValue=v;render();}));
+      d.appendChild(sld('Home CPI growth',0,10,0.1,state.netWorth.homeCpi*100,(state.netWorth.homeCpi*100).toFixed(1)+'%',function(v){state.netWorth.homeCpi=v/100;render();}));
+    }
     return d;
   }));
 
@@ -1825,7 +1848,8 @@ function renderInner(){
   ctrl.appendChild(collSec('pension','Age Pension',function(){
     var d=el('div',{});
     d.appendChild(tog(state.usePension?'Age Pension: ON':'Age Pension: OFF',state.usePension,function(){state.usePension=!state.usePension;render();}));
-    d.appendChild(tog(state.homeowner?'Homeowner: YES':'Homeowner: NO',state.homeowner,function(){state.homeowner=!state.homeowner;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},
+      'This model uses a single assets-test threshold below rather than the separate (higher) threshold Centrelink applies to non-homeowners — a simplification. The Homeowner toggle now lives under "Other Assets & Property," where it controls whether your home appears in the Net Worth chart.'));
     d.appendChild(numI('Full pension ($/yr)',state.fullPension,function(v){state.fullPension=v;render();},{step:100,min:0}));
     d.appendChild(numI('Asset threshold ($)',state.assetThreshold,function(v){state.assetThreshold=v;render();},{step:1000,min:0}));
     d.appendChild(sld('Taper rate (¢/$ over threshold)',0.05,0.15,0.001,state.assetTaperPerDollar,(state.assetTaperPerDollar*100).toFixed(1)+'¢',function(v){state.assetTaperPerDollar=v;render();}));
