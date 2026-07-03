@@ -573,6 +573,13 @@ function buildTimeline(st,returnOverrideFn){
     // 5% at 65-74, etc.) — not a shared age, since the bands are genuinely
     // age-based law that applies per individual.
     var rSpendBeforeMD=rSpend,tSpendBeforeMD=tSpend;
+    // How much of the desired netSpend could actually be funded from super
+    // BEFORE any mandatory-minimum-drawdown top-up below — that top-up (if
+    // any) isn't lifestyle spend, it's excess cash forced out and reinvested
+    // (tracked separately as excessMDCash), so it shouldn't count toward
+    // "what could actually be spent".
+    var spendShortfall=Math.max(0,netSpend-(rSpendBeforeMD+tSpendBeforeMD));
+    var availableSpend=Math.max(0,grossSpend-spendShortfall);
     if(st.minDrawdown&&st.minDrawdown.enabled){
       if(!rWork&&age>=(st.minDrawdown.startAge||61)){var robMD=rBal*minDrawdownRate(age);if(robMD>rSpend)rSpend=Math.min(rBal,robMD);}
       if(st.hasPartner&&!tWork&&tinaAge>=(st.minDrawdown.startAge||61)){var tinaMD=tBal*minDrawdownRate(tinaAge);if(tinaMD>tSpend)tSpend=Math.min(tBal,tinaMD);}
@@ -587,10 +594,11 @@ function buildTimeline(st,returnOverrideFn){
     excessMDBal=excessMDBal*(1+mdGrowthRate)+excessMDThisYear;
     rows.push({age,tinaAge,phase:'FORECAST',stage,
       robClose:rBal,tinaClose:tBal,combinedClose:rBal+tBal,
-      grossSpend,otherIncome,debtPaydownCash,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
+      grossSpend,availableSpend,spendShortfall,otherIncome,debtPaydownCash,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
       excessMDCash:excessMDBal,
       robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,rDiv293,tDiv293,
-      robOverTBC,tinaOverTBC,tbcCap:isFinite(tbcCap)?tbcCap:null,lsRob,lsTina,lsItems});
+      robOverTBC,tinaOverTBC,tbcCap:isFinite(tbcCap)?tbcCap:null,lsRob,lsTina,lsItems,
+      robRetires:age===st.robRetireAge,tinaRetires:st.hasPartner&&tinaAge===st.tinaRetireAge});
   }
   var filterFromAge=st.startAge;
   return rows.filter(function(r){return r.age>=filterFromAge;});
@@ -1360,7 +1368,12 @@ function narrative(rows){
     });
     lines.push('<br>');
   }
-  if(exh){lines.push('⚠️ <strong>Funds exhausted at age '+exh.age+'.</strong> Reduce spending, increase returns, or add inflows.<br><br>');}
+  if(exh){
+    lines.push('⚠️ <strong>Funds exhausted at age '+exh.age+'.</strong> Reduce spending, increase returns, or add inflows.<br><br>');
+    if(a90.grossSpend>0&&a90.spendShortfall>1){
+      lines.push('📉 <strong>From then on, actual available spend falls well short of target:</strong> around <strong>'+fmt(a90.availableSpend)+'</strong>/yr by age '+a90.age+' — pension and other income only — versus a <strong>'+fmt(a90.grossSpend)+'</strong>/yr target. See the red-flagged rows in the Timeline table below.<br><br>');
+    }
+  }
   else{lines.push('✅ <strong>Funds last to age '+state.endAge+'</strong> with <strong>'+fmt(a90.combinedClose)+'</strong> remaining'+(state.hasPartner?' ('+yn+' '+fmt(a90.robClose)+' | '+pn+' '+fmt(a90.tinaClose)+')':'')+'.<br><br>');}
   lines.push('<em>Returns: '+yn+' '+fmtPct(state.robWorkReturn)+(state.hasPartner?' / '+pn+' '+fmtPct(state.tinaWorkReturn):'')+' (work), '+fmtPct(state.retireReturn)+' (retirement). Concessional cap: $'+state.caps.after54.toLocaleString()+' (FY26-27, escalating from age '+state.startAge+'). Tax '+fmtPct(state.contribTax)+'. Figures nominal unless "Real $" is on; spend and pension/cap thresholds escalate at '+fmtPct(state.inflationRate)+' CPI when indexation is on.</em>');
   return lines.join('');
@@ -1818,23 +1831,50 @@ function render(){
     var hasLS=rows.some(function(r){return r.lsItems&&r.lsItems.length>0;});
     var dispRows=state.showAllRows?rows:rows.slice(0,50);
     var tblHeaders=state.hasPartner
-      ?['Year','Phase','Stage',nameYou()+' Close',namePartner()+' Close','Combined','Net Return (YoY)','Gross Spend','Other Inc','Pension']
-      :['Year','Phase','Stage',nameYou()+' Close','Net Return (YoY)','Gross Spend','Other Inc','Pension'];
+      ?['Year','Phase','Stage',nameYou()+' Close',namePartner()+' Close','Combined','Net Return (YoY)','Spend','Other Inc','Pension']
+      :['Year','Phase','Stage',nameYou()+' Close','Net Return (YoY)','Spend','Other Inc','Pension'];
     if(hasLS)tblHeaders.push('Events');
+    var hasShortfallRows=rows.some(function(r){return r.spendShortfall>1;});
     var tblRows=dispRows.map(function(r){
       var isA=r.phase==='ACTUAL';
       var yrs=(!isA&&state.showInflationAdj)?(r.age-state.startAge):0;
       function fc(n){return isA?fmt(n):fmtReal(n,yrs);}
       var stageCol=STAGE_COLORS[r.stage];
+      // Retirement year markers — same blue/purple as the chart, so a row
+      // where you (and/or your partner) retires is unmistakable in the
+      // table too, not just on the chart.
+      var yearCell=String(yearForAge(r.age));
+      if(r.robRetires||r.tinaRetires){
+        var badges=[yearCell];
+        if(r.robRetires)badges.push(el('span',{style:{display:'block',fontSize:'9px',fontWeight:'900',color:'#6c8ef0'}},'● '+nameYou()+' retires'));
+        if(r.tinaRetires)badges.push(el('span',{style:{display:'block',fontSize:'9px',fontWeight:'900',color:'#a06cf0'}},'● '+namePartner()+' retires'));
+        yearCell=el('span',{},badges);
+      }
       var cells=[
-        String(yearForAge(r.age)),isA?'Actual':'Forecast',
+        yearCell,isA?'Actual':'Forecast',
         stageCol?el('span',{style:{color:stageCol.text,fontWeight:'900'}},r.stage):(r.stage||'—')
       ];
       if(state.hasPartner)cells.push(fc(r.robClose),fc(r.tinaClose),fc(r.combinedClose));
       else cells.push(fc(r.robClose));
+      // Spend column shows what's actually available/funded, not just the
+      // preferred target — once other income + pension + remaining super
+      // can't cover the Golden/Silver/Legacy target, this drops below it
+      // and is flagged (red, with the target shown underneath) rather than
+      // silently continuing to display an unaffordable number.
+      var spendCell='—';
+      if(r.grossSpend){
+        if(r.spendShortfall>1){
+          spendCell=el('span',{},[
+            el('span',{style:{color:'#f06c6c',fontWeight:'900'}},fc(r.availableSpend)),
+            el('span',{style:{display:'block',fontSize:'9px',color:'#f0b96c',fontWeight:'700'}},'▼ target '+fc(r.grossSpend))
+          ]);
+        } else {
+          spendCell=fc(r.grossSpend);
+        }
+      }
       cells.push(
         isA&&r.combinedReturn!=null?fmtPctSigned(r.combinedReturn):'—',
-        r.grossSpend?fc(r.grossSpend):'—',
+        spendCell,
         // Debt paydown cash (age 55-60, not invested/not spendable) shown in
         // amber so it's visually distinct from real invested Other Income
         // (61+, drives the pension test and offsets drawdown) in the same
@@ -1878,9 +1918,16 @@ function render(){
     rightCol.appendChild(panel('Sensitivity: Balance at Age '+state.endAge,sensitivityTable()));
     rightCol.appendChild(panel(tblTitle,el('div',{},[
       mkTbl(tblHeaders,tblRows,function(r,i){
-        var st=dispRows[i]&&STAGE_COLORS[dispRows[i].stage];
-        return st?st.bg:null;
+        var dr=dispRows[i];
+        if(!dr)return null;
+        if(dr.spendShortfall>1)return 'rgba(240,108,108,0.10)';
+        if(dr.robRetires)return 'rgba(108,142,240,0.10)';
+        if(dr.tinaRetires)return 'rgba(160,108,240,0.10)';
+        var stc=STAGE_COLORS[dr.stage];
+        return stc?stc.bg:null;
       }),
+      hasShortfallRows?el('div',{style:{fontSize:'10px',color:'#f0b96c',margin:'6px 0',lineHeight:'1.4'}},
+        '🔴 Red Spend figures mean the Golden/Silver/Legacy target couldn\'t be fully funded that year — pension, other income and remaining super only stretch to the amount shown; the target underneath is what you\'d actually like to spend.'):null,
       el('div',{style:{display:'flex',gap:'8px',marginTop:'8px'}},[
         el('button',{style:{padding:'5px 12px',borderRadius:'7px',border:'1px solid #252a3a',
           background:'none',color:'#6c8ef0',cursor:'pointer',fontSize:'12px'},
@@ -1892,18 +1939,18 @@ function render(){
             // Full dataset (all rows, not just the displayed slice), raw
             // numbers rather than formatted strings, so it's usable in Excel.
             var csvHeaders=state.hasPartner
-              ?['Year','Age','PartnerAge','Phase','Stage','YouClose','PartnerClose','Combined','YouYoYReturn','PartnerYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','YouCC','PartnerCC','YouNCC','PartnerNCC','YouDiv293Tax','PartnerDiv293Tax']
-              :['Year','Age','Phase','Stage','Close','YoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','CC','NCC','Div293Tax'];
+              ?['Year','Age','PartnerAge','Phase','Stage','YouClose','PartnerClose','Combined','YouYoYReturn','PartnerYoYReturn','CombinedYoYReturn','TargetSpend','AvailableSpend','SpendShortfall','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','YouCC','PartnerCC','YouNCC','PartnerNCC','YouDiv293Tax','PartnerDiv293Tax']
+              :['Year','Age','Phase','Stage','Close','YoYReturn','TargetSpend','AvailableSpend','SpendShortfall','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','CC','NCC','Div293Tax'];
             var csvRows=rows.map(function(r){
               if(state.hasPartner){
                 return [yearForAge(r.age),r.age,r.tinaAge,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
                   r.robReturn!=null?r.robReturn:'',r.tinaReturn!=null?r.tinaReturn:'',r.combinedReturn!=null?r.combinedReturn:'',
-                  r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.tinaCC||0,
+                  r.grossSpend||0,r.availableSpend||0,r.spendShortfall||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.tinaCC||0,
                   r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
               }
               return [yearForAge(r.age),r.age,r.phase,r.stage||'',r.robClose,
                 r.robReturn!=null?r.robReturn:'',
-                r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.robNCC||0,r.rDiv293||0];
+                r.grossSpend||0,r.availableSpend||0,r.spendShortfall||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.robNCC||0,r.rDiv293||0];
             });
             var csv=[csvHeaders].concat(csvRows).map(function(row){
               return row.map(function(v){
