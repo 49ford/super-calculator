@@ -105,6 +105,7 @@ function yearForAge(age){return START_YEAR+(age-state.startAge);}
 // is what actually tells you who retires in the earlier calendar year.
 function yearsToRetire(personStartAge,personRetireAge){return personRetireAge-personStartAge;}
 function earliestRetireYearOffset(st){
+  if(!st.hasPartner)return yearsToRetire(st.startAge,st.robRetireAge);
   return Math.min(yearsToRetire(st.startAge,st.robRetireAge),yearsToRetire(st.tinaStartAge,st.tinaRetireAge));
 }
 // Translate a Partner-space age (e.g. state.tinaRetireAge, or an age at
@@ -190,6 +191,11 @@ function defaultState(){
     // everywhere (table headers, chart, adviser notes, control labels).
     yourName:'',
     partnerName:'',
+    // Single-person mode. When false, every partner-side control, column,
+    // chart line/marker/legend item and adviser-note mention is hidden, and
+    // buildTimeline() zeroes out all partner balance/contribution/income
+    // flows so the projection is exactly a single-person calculation.
+    hasPartner:true,
     // Your and your partner's current ages — can differ. Every "Year" shown
     // in the Timeline/chart is computed from YOUR age (startAge); Partner's
     // age each year is tracked separately (startAge + years elapsed vs
@@ -416,7 +422,7 @@ function buildTimeline(st,returnOverrideFn){
         robReturn:robReturn,tinaReturn:tinaReturn,combinedReturn:combinedReturn});
     });
   }
-  var rBal=st.robSeed,tBal=st.tinaSeed;
+  var rBal=st.robSeed,tBal=st.hasPartner?st.tinaSeed:0;
   // Earliest retirement expressed as a year-offset from now (NOT a raw age
   // comparison — with two different current ages, whoever has the smaller
   // "years until their retirement age" gap retires first in calendar time,
@@ -439,7 +445,7 @@ function buildTimeline(st,returnOverrideFn){
   // against the right person's real age, not a shared counter.
   for(var age=st.startAge,tinaAge=st.tinaStartAge;age<=st.endAge;age++,tinaAge++){
     var yearOffset=age-st.startAge;
-    var rWork=age<st.robRetireAge,tWork=tinaAge<st.tinaRetireAge;
+    var rWork=age<st.robRetireAge,tWork=st.hasPartner&&tinaAge<st.tinaRetireAge;
     var rCC=rWork?contribForPerson(st.contribMode,st.robIncome,st.robExtraContrib,st.robContribTotal,age,st):0;
     var tCC=tWork?contribForPerson(st.contribMode,st.tinaIncome,st.tinaExtraContrib,st.tinaContribTotal,age,st):0;
     // Division 293: extra 15% tax on concessional contributions when
@@ -455,13 +461,18 @@ function buildTimeline(st,returnOverrideFn){
     // Accumulation returns
     if(rWork){var nr=rCC*(1-st.contribTax)-rDiv293,br=rBal+nr;rBal=br+br*st.robWorkReturn;}
     if(tWork){var nt=tCC*(1-st.contribTax)-tDiv293,bt=tBal+nt;tBal=bt+bt*st.tinaWorkReturn;}
+    if(!st.hasPartner)tBal=0;
     // Non-concessional contributions (no tax, any phase) — window is each
     // person's own age, since "contribute from 55 to 60" naturally means
     // when THAT PERSON is 55-60, not when your age happens to be 55-60.
     var robNCC=0,tinaNCC=0;
     if(st.ncc&&st.ncc.enabled&&age>=st.ncc.startAge&&age<=st.ncc.endAge){robNCC=st.ncc.robAnnual||0;rBal+=robNCC;}
-    if(st.ncc&&st.ncc.enabled&&tinaAge>=st.ncc.startAge&&tinaAge<=st.ncc.endAge){tinaNCC=st.ncc.tinaAnnual||0;tBal+=tinaNCC;}
-    var anyRet=!rWork||!tWork,bothRet=!rWork&&!tWork;
+    if(st.hasPartner&&st.ncc&&st.ncc.enabled&&tinaAge>=st.ncc.startAge&&tinaAge<=st.ncc.endAge){tinaNCC=st.ncc.tinaAnnual||0;tBal+=tinaNCC;}
+    // Single-person mode: retirement/spend phasing is driven by YOUR status
+    // alone — there's no partner to factor into "has anyone retired yet"
+    // or "have both retired".
+    var anyRet=st.hasPartner?(!rWork||!tWork):!rWork;
+    var bothRet=st.hasPartner?(!rWork&&!tWork):false;
     var yIdx=(anyRet&&yearOffset>earliestRetireOffset)?(yearOffset-earliestRetireOffset-1):-1;
     var stageI=yIdx>=0?stageIdx(yIdx,st):-1;
     var stage=stageI>=0?stageName(stageI):(anyRet&&yearOffset===earliestRetireOffset?'Retiring':'');
@@ -476,7 +487,7 @@ function buildTimeline(st,returnOverrideFn){
       if(rBal>tbcCap){robOverTBC=true;var rPension=tbcCap,rAccum=rBal-tbcCap;rBal=rBal+rPension*rr+rAccum*rr*(1-0.15);}
       else{rBal=rBal+rBal*rr;}
     }
-    if(!tWork){
+    if(st.hasPartner&&!tWork){
       var rt=(returnOverrideFn?returnOverrideFn(age):st.retireReturn)+pb;
       if(tBal>tbcCap){tinaOverTBC=true;var tPension=tbcCap,tAccum=tBal-tbcCap;tBal=tBal+tPension*rt+tAccum*rt*(1-0.15);}
       else{tBal=tBal+tBal*rt;}
@@ -488,12 +499,15 @@ function buildTimeline(st,returnOverrideFn){
       lsItems.push(ls);
       var sign=ls.type==='outflow'?-1:1;
       var amt=sign*Math.abs(ls.amount);
-      if(ls.who==='rob'){lsRob+=amt;}
-      else if(ls.who==='tina'){lsTina+=amt;}
+      // Single-person mode: there's no partner to receive/pay a "tina" or
+      // "both" event, so it all lands on you instead of silently vanishing.
+      var effWho=st.hasPartner?ls.who:'rob';
+      if(effWho==='rob'){lsRob+=amt;}
+      else if(effWho==='tina'){lsTina+=amt;}
       else{lsRob+=amt/2;lsTina+=amt/2;}
     });
     rBal=Math.max(0,rBal+lsRob);
-    tBal=Math.max(0,tBal+lsTina);
+    tBal=st.hasPartner?Math.max(0,tBal+lsTina):0;
     // ── Other income ────────────────────────────────────────────────────────
     var otherIncome=0;
     if(anyRet&&age>st.otherIncomeStartAge){
@@ -520,7 +534,7 @@ function buildTimeline(st,returnOverrideFn){
     // can start receiving a (combined-assets-tested) pension once the elder
     // partner reaches Age Pension age, even if the other hasn't yet.
     var pension=0;
-    if(st.usePension&&anyRet&&Math.max(age,tinaAge)>=67){
+    if(st.usePension&&anyRet&&Math.max(age,st.hasPartner?tinaAge:age)>=67){
       pension=estimateAgePension({
         financialAssets:rBal+tBal+totalOther,homeowner:st.homeowner,
         fullPension:idx(st.fullPension,age,st),assetThreshold:idx(st.assetThreshold,age,st),
@@ -534,7 +548,7 @@ function buildTimeline(st,returnOverrideFn){
     var ptIncome=0;
     if(st.partTime&&st.partTime.enabled){
       if(age>st.robRetireAge&&age<=st.partTime.robEndAge)ptIncome+=st.partTime.robAmount||0;
-      if(tinaAge>st.tinaRetireAge&&tinaAge<=st.partTime.tinaEndAge)ptIncome+=st.partTime.tinaAmount||0;
+      if(st.hasPartner&&tinaAge>st.tinaRetireAge&&tinaAge<=st.partTime.tinaEndAge)ptIncome+=st.partTime.tinaAmount||0;
     }
     // ── Spend ────────────────────────────────────────────────────────────────
     // Golden/Silver/Legacy sliders are treated as today's dollars and grown
@@ -561,7 +575,7 @@ function buildTimeline(st,returnOverrideFn){
     var rSpendBeforeMD=rSpend,tSpendBeforeMD=tSpend;
     if(st.minDrawdown&&st.minDrawdown.enabled){
       if(!rWork&&age>=(st.minDrawdown.startAge||61)){var robMD=rBal*minDrawdownRate(age);if(robMD>rSpend)rSpend=Math.min(rBal,robMD);}
-      if(!tWork&&tinaAge>=(st.minDrawdown.startAge||61)){var tinaMD=tBal*minDrawdownRate(tinaAge);if(tinaMD>tSpend)tSpend=Math.min(tBal,tinaMD);}
+      if(st.hasPartner&&!tWork&&tinaAge>=(st.minDrawdown.startAge||61)){var tinaMD=tBal*minDrawdownRate(tinaAge);if(tinaMD>tSpend)tSpend=Math.min(tBal,tinaMD);}
     }
     rBal=Math.max(0,rBal-rSpend);
     tBal=Math.max(0,tBal-tSpend);
@@ -945,7 +959,7 @@ function sensitivityTable(){
   data.sDeltas.forEach(function(sd,si){
     var sLbl;
     if(axis==='retireAge'){
-      sLbl=sd===0?'Base ('+state.robRetireAge+'/'+state.tinaRetireAge+')':(sd>0?'+':'')+sd+' yr'+(Math.abs(sd)===1?'':'s');
+      sLbl=sd===0?'Base ('+state.robRetireAge+(state.hasPartner?'/'+state.tinaRetireAge:'')+')':(sd>0?'+':'')+sd+' yr'+(Math.abs(sd)===1?'':'s');
     }else{
       sLbl=sd===0?'Base ('+fmt(state.spendGolden)+')':(sd>0?'+':'')+fmt(sd);
     }
@@ -996,22 +1010,24 @@ function lumpSumEditor(){
     el('div',{style:{fontSize:'10px',color:'#5a6080'}},'Amount ($)'),amtInp]));
   formDiv.appendChild(row1);
 
-  // Who
-  formDiv.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginBottom:'3px'}},'Who receives/pays'));
+  // Who — only relevant with a partner; single-person mode always uses you.
+  if(!state.hasPartner)lsForm.who='rob';
   var whoRow=el('div',{style:{display:'flex',gap:'4px',marginBottom:'6px'}});
-  [{k:'rob',l:nameYou()},{k:'tina',l:namePartner()},{k:'both',l:'Both'}].forEach(function(o){
-    var b=segBtn(o.l,lsForm.who===o.k,function(){lsForm.who=o.k;refreshWho();});
-    b.setAttribute('data-who',o.k);
-    whoRow.appendChild(b);
-  });
-  formDiv.appendChild(whoRow);
-
   function refreshWho(){
     whoRow.querySelectorAll('button').forEach(function(b){
       var active=lsForm.who===b.getAttribute('data-who');
       b.style.background=active?'rgba(108,142,240,.18)':'transparent';
       b.style.color=active?'#6c8ef0':'#7a8099';
     });
+  }
+  if(state.hasPartner){
+    formDiv.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginBottom:'3px'}},'Who receives/pays'));
+    [{k:'rob',l:nameYou()},{k:'tina',l:namePartner()},{k:'both',l:'Both'}].forEach(function(o){
+      var b=segBtn(o.l,lsForm.who===o.k,function(){lsForm.who=o.k;refreshWho();});
+      b.setAttribute('data-who',o.k);
+      whoRow.appendChild(b);
+    });
+    formDiv.appendChild(whoRow);
   }
 
   // Type
@@ -1089,8 +1105,8 @@ function lumpSumEditor(){
           el('span',{style:{fontWeight:'700',color:'#e8eaf0'}},ls.label+' '),
           el('span',{style:{color:'#5a6080'}},'Age '+ls.age+' · '),
           el('span',{style:{color:ls.type==='outflow'?'#f06c6c':'#5dd87a',fontWeight:'700'}},sign+fmt(ls.amount)),
-          el('span',{style:{marginLeft:'4px',fontSize:'10px',color:'#5a6080'}},
-            ls.who==='rob'?'('+nameYou()+')':ls.who==='tina'?'('+namePartner()+')':'(Both)'),
+          state.hasPartner?el('span',{style:{marginLeft:'4px',fontSize:'10px',color:'#5a6080'}},
+            ls.who==='rob'?'('+nameYou()+')':ls.who==='tina'?'('+namePartner()+')':'(Both)'):null,
           el('span',{class:'ls-badge '+(ls.type==='inflow'?'badge-in':ls.type==='outflow'?'badge-out':'badge-super')},typeLabel),
           ls.downsizer?el('span',{class:'ls-badge badge-down'},'↓DS'):null
         ]),
@@ -1149,9 +1165,11 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
   // state.tinaRetireAge is a Partner-space age — translate to the shared
   // robAge x-axis (what YOUR age will be when Partner retires) before it
   // can be plotted alongside state.robRetireAge.
-  var partnerRetireRobAge=ageEquivalent(state,state.tinaRetireAge);
   addMarker(state.robRetireAge,nameYou()+' '+yearForAge(state.robRetireAge),'#6c8ef0');
-  if(partnerRetireRobAge!==state.robRetireAge)addMarker(partnerRetireRobAge,namePartner()+' '+yearForAge(partnerRetireRobAge),'#a06cf0');
+  if(state.hasPartner){
+    var partnerRetireRobAge=ageEquivalent(state,state.tinaRetireAge);
+    if(partnerRetireRobAge!==state.robRetireAge)addMarker(partnerRetireRobAge,namePartner()+' '+yearForAge(partnerRetireRobAge),'#a06cf0');
+  }
 
   // Monte Carlo band (p10–p90)
   if(mcRows&&mcRows.length>1){
@@ -1167,9 +1185,11 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
       svg.appendChild(svgEl('path',{d:medPts,fill:'none',stroke:'rgba(93,216,122,0.55)','stroke-width':'1.5','stroke-dasharray':'3,3'}));
     }
   }
-  // Balance lines
+  // Balance lines. Single-person mode: combinedClose===robClose exactly, so
+  // just the You + Combined lines are drawn (they'll overlap) — no Partner
+  // line to show.
   svg.appendChild(svgEl('path',{d:mkPath(rows,'robClose'),fill:'none',stroke:'#6c8ef0','stroke-width':'2'}));
-  svg.appendChild(svgEl('path',{d:mkPath(rows,'tinaClose'),fill:'none',stroke:'#a06cf0','stroke-width':'2'}));
+  if(state.hasPartner)svg.appendChild(svgEl('path',{d:mkPath(rows,'tinaClose'),fill:'none',stroke:'#a06cf0','stroke-width':'2'}));
   svg.appendChild(svgEl('path',{d:mkPath(rows,'combinedClose'),fill:'none',stroke:'#5dd87a','stroke-width':'2.5'}));
   if(rowsB){svg.appendChild(svgEl('path',{d:mkPath(rowsB,'combinedClose'),fill:'none',stroke:'#f0b96c','stroke-width':'2','stroke-dasharray':'6,3'}));}
   if(rowsShock){
@@ -1201,7 +1221,9 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
   });
 
   // Legend
-  var legItems=[{l:nameYou(),c:'#6c8ef0'},{l:namePartner(),c:'#a06cf0'},{l:'Combined A',c:'#5dd87a'}];
+  var legItems=state.hasPartner
+    ?[{l:nameYou(),c:'#6c8ef0'},{l:namePartner(),c:'#a06cf0'},{l:'Combined A',c:'#5dd87a'}]
+    :[{l:nameYou(),c:'#6c8ef0'},{l:'Combined A',c:'#5dd87a'}];
   if(rowsB)legItems.push({l:'Combined B',c:'#f0b96c'});
   if(rowsShock){var sc2=state.shock.type==='crash'?'#f06c6c':'#00e5cc';legItems.push({l:(state.shock.type==='crash'?'Crash':'Boom')+' Shock',c:sc2});}
   if(mcRows)legItems.push({l:'MC Median',c:'rgba(93,216,122,0.7)'});
@@ -1235,9 +1257,13 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
     if(!row){hideTooltip();return;}
     cursor.setAttribute('x1',String(xp(age)));cursor.setAttribute('x2',String(xp(age)));cursor.setAttribute('display','');
     var h='<div style="font-weight:900;margin-bottom:6px;color:#e8eaf0">Year '+yearForAge(age)+(row.phase==='ACTUAL'?' <span style="font-size:10px;color:#5dd87a">ACTUAL</span>':'')+'</div>';
-    h+='<div style="color:#6c8ef0">'+esc(nameYou())+': '+fmt(row.robClose)+'</div>';
-    h+='<div style="color:#a06cf0">'+esc(namePartner())+': '+fmt(row.tinaClose)+'</div>';
-    h+='<div style="color:#5dd87a;font-weight:700">Combined: '+fmt(row.combinedClose)+'</div>';
+    if(state.hasPartner){
+      h+='<div style="color:#6c8ef0">'+esc(nameYou())+': '+fmt(row.robClose)+'</div>';
+      h+='<div style="color:#a06cf0">'+esc(namePartner())+': '+fmt(row.tinaClose)+'</div>';
+      h+='<div style="color:#5dd87a;font-weight:700">Combined: '+fmt(row.combinedClose)+'</div>';
+    } else {
+      h+='<div style="color:#5dd87a;font-weight:700">'+esc(nameYou())+': '+fmt(row.combinedClose)+'</div>';
+    }
     if(row.grossSpend)h+='<div style="color:#f0b96c;margin-top:4px">Spend: '+fmt(row.grossSpend)+'</div>';
     if(row.pension)h+='<div style="color:#f0b96c">Pension: '+fmt(row.pension)+'</div>';
     if(row.lsItems&&row.lsItems.length>0){
@@ -1286,9 +1312,16 @@ function narrative(rows){
   var partnerPhrase=(state.partnerName||'').trim()?pn:'your partner';
   var lines=[];
   lines.push('<strong>Retirement Outlook — Summary</strong><br><br>');
-  lines.push(yn+' '+verbYou('retire','retires')+' at <strong>age '+state.robRetireAge+'</strong> (year '+yearForAge(state.robRetireAge)+') and '+partnerPhrase+' at <strong>age '+state.tinaRetireAge+'</strong> (year '+yearForAge(ageEquivalent(state,state.tinaRetireAge))+'), with a combined super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at earliest retirement ('+yn+' '+fmt(aR.robClose)+' | '+pn+' '+fmt(aR.tinaClose)+').<br><br>');
-  if(state.robRetireAge<60||state.tinaRetireAge<60){
-    lines.push('⚠️ <strong>Below preservation age:</strong> '+(state.robRetireAge<60?pyn:'')+(state.robRetireAge<60&&state.tinaRetireAge<60?' and ':'')+(state.tinaRetireAge<60?ppn:'')+' planned retirement age is under the general preservation age of 60 — early access to super requires meeting a condition of release.<br><br>');
+  if(state.hasPartner){
+    lines.push(yn+' '+verbYou('retire','retires')+' at <strong>age '+state.robRetireAge+'</strong> (year '+yearForAge(state.robRetireAge)+') and '+partnerPhrase+' at <strong>age '+state.tinaRetireAge+'</strong> (year '+yearForAge(ageEquivalent(state,state.tinaRetireAge))+'), with a combined super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at earliest retirement ('+yn+' '+fmt(aR.robClose)+' | '+pn+' '+fmt(aR.tinaClose)+').<br><br>');
+    if(state.robRetireAge<60||state.tinaRetireAge<60){
+      lines.push('⚠️ <strong>Below preservation age:</strong> '+(state.robRetireAge<60?pyn:'')+(state.robRetireAge<60&&state.tinaRetireAge<60?' and ':'')+(state.tinaRetireAge<60?ppn:'')+' planned retirement age is under the general preservation age of 60 — early access to super requires meeting a condition of release.<br><br>');
+    }
+  } else {
+    lines.push(yn+' '+verbYou('retire','retires')+' at <strong>age '+state.robRetireAge+'</strong> (year '+yearForAge(state.robRetireAge)+') with a projected super balance of <strong>'+fmt(aR.combinedClose)+'</strong> at retirement.<br><br>');
+    if(state.robRetireAge<60){
+      lines.push('⚠️ <strong>Below preservation age:</strong> '+pyn+' planned retirement age is under the general preservation age of 60 — early access to super requires meeting a condition of release.<br><br>');
+    }
   }
   lines.push('Spending is phased: <strong>Golden '+fmt(state.spendGolden)+'</strong> / <strong>Silver '+fmt(state.spendSilver)+'</strong> / <strong>Legacy '+fmt(state.spendLegacy)+'</strong> per year gross, in today\'s dollars'+(state.indexation&&state.indexation.enabled?' (escalated at '+fmtPct(state.inflationRate)+' CPI in the projection)':'')+'. Drawdown is met first from other-asset income, then Age Pension, with the remainder from super.<br><br>');
   if(tot>0&&oi){lines.push('Other assets total <strong>'+fmt(tot)+'</strong>, generating <strong>'+fmt(oi.otherIncome)+'</strong>/yr from age '+(state.otherIncomeStartAge+1)+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI '+fmtPct(state.otherAssetsCpi)+' p.a.).<br><br>');}
@@ -1302,12 +1335,12 @@ function narrative(rows){
   if(state.div293&&state.div293.enabled){
     var rDiv293Tot2=rows.filter(function(r){return r.phase==='FORECAST';}).reduce(function(s,r){return s+(r.rDiv293||0);},0);
     var tDiv293Tot2=rows.filter(function(r){return r.phase==='FORECAST';}).reduce(function(s,r){return s+(r.tDiv293||0);},0);
-    if(rDiv293Tot2+tDiv293Tot2>0){lines.push('💰 <strong>Division 293 tax modelled:</strong> an extra 15% applies to concessional contributions once income + CC exceeds '+fmt(state.div293.threshold)+'. Lifetime estimate: <strong>'+fmt(rDiv293Tot2+tDiv293Tot2)+'</strong> ('+yn+' '+fmt(rDiv293Tot2)+' | '+pn+' '+fmt(tDiv293Tot2)+').<br><br>');}
+    if(rDiv293Tot2+tDiv293Tot2>0){lines.push('💰 <strong>Division 293 tax modelled:</strong> an extra 15% applies to concessional contributions once income + CC exceeds '+fmt(state.div293.threshold)+'. Lifetime estimate: <strong>'+fmt(rDiv293Tot2+tDiv293Tot2)+'</strong>'+(state.hasPartner?' ('+yn+' '+fmt(rDiv293Tot2)+' | '+pn+' '+fmt(tDiv293Tot2)+')':'')+'.<br><br>');}
   }
   if(state.tbc&&state.tbc.enabled){
     var robTBCRow2=rows.filter(function(r){return r.phase==='FORECAST'&&r.robOverTBC;})[0];
     var tinaTBCRow2=rows.filter(function(r){return r.phase==='FORECAST'&&r.tinaOverTBC;})[0];
-    if(robTBCRow2||tinaTBCRow2){lines.push('🏦 <strong>Transfer Balance Cap:</strong> '+(robTBCRow2?pyn+' balance exceeds the cap from age '+robTBCRow2.age+'. ':'')+(tinaTBCRow2?ppn+' balance exceeds the cap from age '+tinaTBCRow2.tinaAge+'. ':'')+'The excess is modelled as remaining in accumulation phase, taxed at 15% on earnings rather than the pension-phase 0%.<br><br>');}
+    if(robTBCRow2||tinaTBCRow2){lines.push('🏦 <strong>Transfer Balance Cap:</strong> '+(robTBCRow2?pyn+' balance exceeds the cap from age '+robTBCRow2.age+'. ':'')+(state.hasPartner&&tinaTBCRow2?ppn+' balance exceeds the cap from age '+tinaTBCRow2.tinaAge+'. ':'')+'The excess is modelled as remaining in accumulation phase, taxed at 15% on earnings rather than the pension-phase 0%.<br><br>');}
   }
   if(state.shock&&state.shock.enabled){
     var sRows2=buildShockTimeline();
@@ -1322,13 +1355,14 @@ function narrative(rows){
     ls.forEach(function(e){
       var sign=e.type==='outflow'?'-':'+';
       var whoLbl=e.who==='rob'?yn:e.who==='tina'?pn:'Both';
-      lines.push('• Age '+e.age+': <strong>'+esc(e.label)+'</strong> '+sign+fmt(e.amount)+' ('+whoLbl+(e.downsizer?', downsizer':'')+')<br>');
+      var whoNote=state.hasPartner?(whoLbl+(e.downsizer?', downsizer':'')):(e.downsizer?'downsizer':'');
+      lines.push('• Age '+e.age+': <strong>'+esc(e.label)+'</strong> '+sign+fmt(e.amount)+(whoNote?' ('+whoNote+')':'')+'<br>');
     });
     lines.push('<br>');
   }
   if(exh){lines.push('⚠️ <strong>Funds exhausted at age '+exh.age+'.</strong> Reduce spending, increase returns, or add inflows.<br><br>');}
-  else{lines.push('✅ <strong>Funds last to age '+state.endAge+'</strong> with <strong>'+fmt(a90.combinedClose)+'</strong> remaining ('+yn+' '+fmt(a90.robClose)+' | '+pn+' '+fmt(a90.tinaClose)+').<br><br>');}
-  lines.push('<em>Returns: '+yn+' '+fmtPct(state.robWorkReturn)+' / '+pn+' '+fmtPct(state.tinaWorkReturn)+' (work), '+fmtPct(state.retireReturn)+' (retirement). Concessional cap: $'+state.caps.after54.toLocaleString()+' (FY26-27, escalating from age '+state.startAge+'). Tax '+fmtPct(state.contribTax)+'. Figures nominal unless "Real $" is on; spend and pension/cap thresholds escalate at '+fmtPct(state.inflationRate)+' CPI when indexation is on.</em>');
+  else{lines.push('✅ <strong>Funds last to age '+state.endAge+'</strong> with <strong>'+fmt(a90.combinedClose)+'</strong> remaining'+(state.hasPartner?' ('+yn+' '+fmt(a90.robClose)+' | '+pn+' '+fmt(a90.tinaClose)+')':'')+'.<br><br>');}
+  lines.push('<em>Returns: '+yn+' '+fmtPct(state.robWorkReturn)+(state.hasPartner?' / '+pn+' '+fmtPct(state.tinaWorkReturn):'')+' (work), '+fmtPct(state.retireReturn)+' (retirement). Concessional cap: $'+state.caps.after54.toLocaleString()+' (FY26-27, escalating from age '+state.startAge+'). Tax '+fmtPct(state.contribTax)+'. Figures nominal unless "Real $" is on; spend and pension/cap thresholds escalate at '+fmtPct(state.inflationRate)+' CPI when indexation is on.</em>');
   return lines.join('');
 }
 
@@ -1359,6 +1393,7 @@ function isValidScenarioShape(obj){
   if(obj.yourName!==undefined&&typeof obj.yourName!=='string')return false;
   if(obj.partnerName!==undefined&&typeof obj.partnerName!=='string')return false;
   if(obj.contribMode!==undefined&&obj.contribMode!=='income'&&obj.contribMode!=='total')return false;
+  if(obj.hasPartner!==undefined&&typeof obj.hasPartner!=='boolean')return false;
   return true;
 }
 var importInp=el('input',{type:'file',accept:'application/json',style:{display:'none'}});
@@ -1463,19 +1498,25 @@ function render(){
     var d=el('div',{});
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'8px',lineHeight:'1.5'}},'This is a blank template — nothing below is pre-filled with anyone\'s real data. Enter your own numbers, in today\'s dollars.'));
     d.appendChild(txtI('Your name (optional)',state.yourName,function(v){state.yourName=v;render();},'e.g. Rob'));
-    d.appendChild(txtI('Partner\'s name (optional)',state.partnerName,function(v){state.partnerName=v;render();},'e.g. Tina'));
-    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},'Leave blank to keep the generic "You" / "Partner" labels — names, if entered, replace them everywhere: table headers, chart, and adviser notes.'));
     d.appendChild(sld(possYou()+' current age',18,75,1,state.startAge,String(state.startAge),function(v){state.startAge=v;render();}));
-    d.appendChild(sld(possPartner()+' current age',18,75,1,state.tinaStartAge,String(state.tinaStartAge),function(v){state.tinaStartAge=v;render();}));
-    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},'Can be different ages — retirement ages below are each applied to the right person\'s own age, so two different current ages give two different retirement years.'));
     d.appendChild(numI(possYou()+' current super balance ($)',state.robSeed,function(v){state.robSeed=v;render();},{step:5000,min:0}));
-    d.appendChild(numI(possPartner()+' current super balance ($)',state.tinaSeed,function(v){state.tinaSeed=v;render();},{step:5000,min:0}));
+    d.appendChild(tog(state.hasPartner?'Planning with a partner':'No partner — single-person plan',state.hasPartner,function(){state.hasPartner=!state.hasPartner;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},state.hasPartner?
+      'Turn off if you\'re planning for yourself alone — every partner field, column, and chart line disappears and the projection becomes single-person.':
+      'Single-person plan: all partner-related fields, table columns, and chart lines are hidden. Turn back on to add a partner.'));
+    if(state.hasPartner){
+      d.appendChild(txtI('Partner\'s name (optional)',state.partnerName,function(v){state.partnerName=v;render();},'e.g. Tina'));
+      d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},'Leave blank to keep the generic "You" / "Partner" labels — names, if entered, replace them everywhere: table headers, chart, and adviser notes.'));
+      d.appendChild(sld(possPartner()+' current age',18,75,1,state.tinaStartAge,String(state.tinaStartAge),function(v){state.tinaStartAge=v;render();}));
+      d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},'Can be different ages — retirement ages below are each applied to the right person\'s own age, so two different current ages give two different retirement years.'));
+      d.appendChild(numI(possPartner()+' current super balance ($)',state.tinaSeed,function(v){state.tinaSeed=v;render();},{step:5000,min:0}));
+    }
     return d;
   }));
   ctrl.appendChild(collSec('returns','Returns',function(){
     var d=el('div',{});
     d.appendChild(sld(nameYou()+' work return',3,15,0.05,state.robWorkReturn*100,fmtPct(state.robWorkReturn),function(v){state.robWorkReturn=v/100;render();}));
-    d.appendChild(sld(namePartner()+' work return',3,15,0.05,state.tinaWorkReturn*100,fmtPct(state.tinaWorkReturn),function(v){state.tinaWorkReturn=v/100;render();}));
+    if(state.hasPartner)d.appendChild(sld(namePartner()+' work return',3,15,0.05,state.tinaWorkReturn*100,fmtPct(state.tinaWorkReturn),function(v){state.tinaWorkReturn=v/100;render();}));
     d.appendChild(sld('Retirement return',0,12,0.05,state.retireReturn*100,fmtPct(state.retireReturn),function(v){state.retireReturn=v/100;render();}));
     if(state.showInflationAdj)d.appendChild(sld('CPI rate',1,8,0.1,state.inflationRate*100,fmtPct(state.inflationRate),function(v){state.inflationRate=v/100;render();}));
     d.appendChild(tog(state.pensionBoost.enabled?'Pension phase boost: +'+fmtPct(state.pensionBoost.rate)+' (tax saving ON)':'Pension phase boost: OFF',state.pensionBoost.enabled,function(){state.pensionBoost.enabled=!state.pensionBoost.enabled;render();}));
@@ -1487,8 +1528,10 @@ function render(){
     var d=el('div',{});
     d.appendChild(sld(nameYou()+' '+verbYou('retire','retires')+' at',55,70,1,state.robRetireAge,String(state.robRetireAge),function(v){state.robRetireAge=v;render();}));
     if(state.robRetireAge<60)d.appendChild(el('div',{style:{fontSize:'10px',color:'#f0b96c',marginTop:'-4px',marginBottom:'6px'}},'⚠ Below preservation age (60) — early access requires a condition of release.'));
-    d.appendChild(sld(namePartner()+' retires at',55,70,1,state.tinaRetireAge,String(state.tinaRetireAge),function(v){state.tinaRetireAge=v;render();}));
-    if(state.tinaRetireAge<60)d.appendChild(el('div',{style:{fontSize:'10px',color:'#f0b96c',marginTop:'-4px',marginBottom:'6px'}},'⚠ Below preservation age (60) — early access requires a condition of release.'));
+    if(state.hasPartner){
+      d.appendChild(sld(namePartner()+' retires at',55,70,1,state.tinaRetireAge,String(state.tinaRetireAge),function(v){state.tinaRetireAge=v;render();}));
+      if(state.tinaRetireAge<60)d.appendChild(el('div',{style:{fontSize:'10px',color:'#f0b96c',marginTop:'-4px',marginBottom:'6px'}},'⚠ Below preservation age (60) — early access requires a condition of release.'));
+    }
     d.appendChild(sld('Horizon (end age)',70,100,1,state.endAge,String(state.endAge),function(v){state.endAge=v;render();}));
     return d;
   }));
@@ -1512,7 +1555,7 @@ function render(){
       d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginTop:'3px'}},
         'Legacy: '+legacyYears+' year'+(legacyYears===1?'':'s')+' — whatever\'s left of the horizon after Golden+Silver, not a separate slider.'));
     })();
-    d.appendChild(sld('Split when both retired ('+nameYou()+' %)',0,100,1,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
+    if(state.hasPartner)d.appendChild(sld('Split when both retired ('+nameYou()+' %)',0,100,1,state.splitPct,state.splitPct+'%',function(v){state.splitPct=v;render();}));
     return d;
   }));
 
@@ -1586,7 +1629,7 @@ function render(){
       'After-tax contributions — no 15% contributions tax. Cap: '+fmt(nccCapNow)+'/yr (FY26-27: $130k, derived as 4× the concessional cap; escalates with it). Bring-forward: 2yr/3yr caps available if Total Super Balance is below TBC-derived tiers.'));
     d.appendChild(tog(state.ncc.enabled?'NCC: ON':'NCC: OFF',state.ncc.enabled,function(){state.ncc.enabled=!state.ncc.enabled;render();}));
     d.appendChild(sld(nameYou()+' NCC ($/yr)',0,200000,5000,state.ncc.robAnnual,fmt(state.ncc.robAnnual),function(v){state.ncc.robAnnual=v;render();}));
-    d.appendChild(sld(namePartner()+' NCC ($/yr)',0,200000,5000,state.ncc.tinaAnnual,fmt(state.ncc.tinaAnnual),function(v){state.ncc.tinaAnnual=v;render();}));
+    if(state.hasPartner)d.appendChild(sld(namePartner()+' NCC ($/yr)',0,200000,5000,state.ncc.tinaAnnual,fmt(state.ncc.tinaAnnual),function(v){state.ncc.tinaAnnual=v;render();}));
     d.appendChild(sld('From age',45,75,1,state.ncc.startAge,String(state.ncc.startAge),function(v){state.ncc.startAge=v;render();}));
     d.appendChild(sld('To age',45,75,1,state.ncc.endAge,String(state.ncc.endAge),function(v){state.ncc.endAge=v;render();}));
     if(state.ncc.enabled){
@@ -1595,10 +1638,10 @@ function render(){
       // on their own age field) rather than assuming one shared row works
       // for both.
       var robStartRow=rows.filter(function(r){return r.age===state.ncc.startAge;})[0];
-      var tinaStartRow=rows.filter(function(r){return r.tinaAge===state.ncc.startAge;})[0];
+      var tinaStartRow=state.hasPartner?rows.filter(function(r){return r.tinaAge===state.ncc.startAge;})[0]:null;
       if(robStartRow||tinaStartRow){
         var tbcNowForRob=tbcCapForAge(state.ncc.startAge,state);
-        var tbcNowForTina=tbcCapForAge(ageEquivalent(state,state.ncc.startAge),state);
+        var tbcNowForTina=state.hasPartner?tbcCapForAge(ageEquivalent(state,state.ncc.startAge),state):0;
         function eligLabel(tsb,tbcNow){
           if(tsb>=tbcNow)return{txt:'Not eligible (TSB ≥ TBC of '+fmt(tbcNow)+')',col:'#f06c6c'};
           if(tsb<tbcNow-2*nccCapNow)return{txt:'3-yr bring-forward available ('+fmt(nccCapNow*3)+')',col:'#5dd87a'};
@@ -1623,8 +1666,10 @@ function render(){
     d.appendChild(tog(state.partTime.enabled?'Part-time: ON':'Part-time: OFF',state.partTime.enabled,function(){state.partTime.enabled=!state.partTime.enabled;render();}));
     d.appendChild(sld(nameYou()+' income ($/yr)',0,200000,5000,state.partTime.robAmount,fmt(state.partTime.robAmount),function(v){state.partTime.robAmount=v;render();}));
     d.appendChild(sld(nameYou()+' '+verbYou('end','ends')+' at age',55,75,1,state.partTime.robEndAge,String(state.partTime.robEndAge),function(v){state.partTime.robEndAge=v;render();}));
-    d.appendChild(sld(namePartner()+' income ($/yr)',0,200000,5000,state.partTime.tinaAmount,fmt(state.partTime.tinaAmount),function(v){state.partTime.tinaAmount=v;render();}));
-    d.appendChild(sld(namePartner()+' ends at age',55,75,1,state.partTime.tinaEndAge,String(state.partTime.tinaEndAge),function(v){state.partTime.tinaEndAge=v;render();}));
+    if(state.hasPartner){
+      d.appendChild(sld(namePartner()+' income ($/yr)',0,200000,5000,state.partTime.tinaAmount,fmt(state.partTime.tinaAmount),function(v){state.partTime.tinaAmount=v;render();}));
+      d.appendChild(sld(namePartner()+' ends at age',55,75,1,state.partTime.tinaEndAge,String(state.partTime.tinaEndAge),function(v){state.partTime.tinaEndAge=v;render();}));
+    }
     return d;
   }));
 
@@ -1690,13 +1735,15 @@ function render(){
       d.appendChild(sld('Super Guarantee rate',9,15,0.1,state.sgRate*100,fmtPct(state.sgRate),function(v){state.sgRate=v/100;render();}));
       d.appendChild(numI(nameYou()+' income ($/yr)',state.robIncome,function(v){state.robIncome=v;render();},{step:5000,min:0}));
       d.appendChild(numI(nameYou()+' extra/salary-sacrifice ($/yr)',state.robExtraContrib,function(v){state.robExtraContrib=v;render();},{step:1000,min:0}));
-      d.appendChild(numI(namePartner()+' income ($/yr)',state.tinaIncome,function(v){state.tinaIncome=v;render();},{step:5000,min:0}));
-      d.appendChild(numI(namePartner()+' extra/salary-sacrifice ($/yr)',state.tinaExtraContrib,function(v){state.tinaExtraContrib=v;render();},{step:1000,min:0}));
+      if(state.hasPartner){
+        d.appendChild(numI(namePartner()+' income ($/yr)',state.tinaIncome,function(v){state.tinaIncome=v;render();},{step:5000,min:0}));
+        d.appendChild(numI(namePartner()+' extra/salary-sacrifice ($/yr)',state.tinaExtraContrib,function(v){state.tinaExtraContrib=v;render();},{step:1000,min:0}));
+      }
       d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
         'Contribution = income × SG rate + extra, capped at the legislated cap above. SG rate is editable in case it changes — check the current legislated rate if unsure.'));
     } else {
       d.appendChild(numI(nameYou()+' concessional contribution ($/yr)',state.robContribTotal,function(v){state.robContribTotal=v;render();},{step:500,min:0}));
-      d.appendChild(numI(namePartner()+' concessional contribution ($/yr)',state.tinaContribTotal,function(v){state.tinaContribTotal=v;render();},{step:500,min:0}));
+      if(state.hasPartner)d.appendChild(numI(namePartner()+' concessional contribution ($/yr)',state.tinaContribTotal,function(v){state.tinaContribTotal=v;render();},{step:500,min:0}));
       d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
         'Flat $ figure, capped at the legislated cap above. Left at the cap\'s default value, this reproduces contributing right up to the cap every year.'));
     }
@@ -1715,7 +1762,7 @@ function render(){
       'Extra 15% tax on concessional contributions when (taxable income + concessional contributions) exceeds the threshold. Currently $250,000 by law and, unlike the other caps/thresholds in this tool, has never been indexed since 2017 — edit it below only if that changes. Needs each person\'s taxable income (excl. super contributions) to estimate.'));
     d.appendChild(tog(state.div293.enabled?'Division 293: ON':'Division 293: OFF',state.div293.enabled,function(){state.div293.enabled=!state.div293.enabled;render();}));
     d.appendChild(numI(nameYou()+' taxable income ($)',state.div293.robIncome,function(v){state.div293.robIncome=v;render();},{step:5000,min:0}));
-    d.appendChild(numI(namePartner()+' taxable income ($)',state.div293.tinaIncome,function(v){state.div293.tinaIncome=v;render();},{step:5000,min:0}));
+    if(state.hasPartner)d.appendChild(numI(namePartner()+' taxable income ($)',state.div293.tinaIncome,function(v){state.div293.tinaIncome=v;render();},{step:5000,min:0}));
     d.appendChild(numI('Threshold ($, not indexed by law)',state.div293.threshold,function(v){state.div293.threshold=v;render();},{step:5000,min:0}));
     return d;
   }));
@@ -1744,11 +1791,11 @@ function render(){
     // Key cards — pension card now uses age-67 row
     var p67=a67?a67.pension:0;
     var cards=el('div',{class:'cards-grid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:'12px'}});
-    cards.appendChild(card('Combined at retirement',fmt(aRet.combinedClose),'Age '+er+' · '+nameYou()+' '+fmt(aRet.robClose),'#5dd87a'));
+    cards.appendChild(card(state.hasPartner?'Combined at retirement':'Balance at retirement',fmt(aRet.combinedClose),state.hasPartner?'Age '+er+' · '+nameYou()+' '+fmt(aRet.robClose):'Age '+er,'#5dd87a'));
     cards.appendChild(card('Other income @ '+(state.otherIncomeStartAge+1),fmt(oiFirstRow?oiFirstRow.otherIncome:0),fmt(tot)+' × '+fmtPct(state.otherAssetsReturn),'#6c8ef0'));
     cards.appendChild(card('Age Pension (at 67)',p67?fmt(p67):'—',state.usePension?(p67?'Reduces drawdown':'Below threshold'):'Disabled',p67?'#f0b96c':'#5a6080'));
     cards.appendChild(card(exh?'Exhausted at age':'Still running at',exh?String(exh.age):String(state.endAge),exh?'Household runs out':'Horizon intact',exh?'#f06c6c':'#5dd87a'));
-    cards.appendChild(card('Balance at 90',fmt(a90.combinedClose),nameYou()+' '+fmt(a90.robClose)+' · '+namePartner()+' '+fmt(a90.tinaClose),a90.combinedClose>0?'#a06cf0':'#f06c6c'));
+    cards.appendChild(card('Balance at 90',fmt(a90.combinedClose),state.hasPartner?nameYou()+' '+fmt(a90.robClose)+' · '+namePartner()+' '+fmt(a90.tinaClose):null,a90.combinedClose>0?'#a06cf0':'#f06c6c'));
     if(state.shock.enabled&&rowsShock){
       var baseEnd=rows[rows.length-1];var shkEnd=rowsShock[rowsShock.length-1];
       var shkImpact=shkEnd.combinedClose-baseEnd.combinedClose;
@@ -1770,7 +1817,9 @@ function render(){
     // Timeline table
     var hasLS=rows.some(function(r){return r.lsItems&&r.lsItems.length>0;});
     var dispRows=state.showAllRows?rows:rows.slice(0,50);
-    var tblHeaders=['Year','Phase','Stage',nameYou()+' Close',namePartner()+' Close','Combined','Net Return (YoY)','Gross Spend','Other Inc','Pension'];
+    var tblHeaders=state.hasPartner
+      ?['Year','Phase','Stage',nameYou()+' Close',namePartner()+' Close','Combined','Net Return (YoY)','Gross Spend','Other Inc','Pension']
+      :['Year','Phase','Stage',nameYou()+' Close','Net Return (YoY)','Gross Spend','Other Inc','Pension'];
     if(hasLS)tblHeaders.push('Events');
     var tblRows=dispRows.map(function(r){
       var isA=r.phase==='ACTUAL';
@@ -1779,8 +1828,11 @@ function render(){
       var stageCol=STAGE_COLORS[r.stage];
       var cells=[
         String(yearForAge(r.age)),isA?'Actual':'Forecast',
-        stageCol?el('span',{style:{color:stageCol.text,fontWeight:'900'}},r.stage):(r.stage||'—'),
-        fc(r.robClose),fc(r.tinaClose),fc(r.combinedClose),
+        stageCol?el('span',{style:{color:stageCol.text,fontWeight:'900'}},r.stage):(r.stage||'—')
+      ];
+      if(state.hasPartner)cells.push(fc(r.robClose),fc(r.tinaClose),fc(r.combinedClose));
+      else cells.push(fc(r.robClose));
+      cells.push(
         isA&&r.combinedReturn!=null?fmtPctSigned(r.combinedReturn):'—',
         r.grossSpend?fc(r.grossSpend):'—',
         // Debt paydown cash (age 55-60, not invested/not spendable) shown in
@@ -1789,7 +1841,7 @@ function render(){
         // column, per how the two figures were asked to be told apart.
         r.debtPaydownCash?el('span',{style:{color:'#f0b96c'}},fmt(r.debtPaydownCash)):(r.otherIncome?fmt(r.otherIncome):'—'),
         r.pension?fmt(r.pension):'—'
-      ];
+      );
       if(hasLS){
         var lsCell=r.lsItems&&r.lsItems.length>0
           ?r.lsItems.map(function(ls){return (ls.type==='outflow'?'−':'+')+''+ls.label;}).join(', ')
@@ -1817,8 +1869,8 @@ function render(){
       var avg=function(a){return a.length?a.reduce(function(s,v){return s+v;},0)/a.length:null;};
       rightCol.appendChild(panel('Actual Fund Growth (age '+firstA.age+'→'+lastA.age+', '+yearsSpan+' years)',el('div',{style:{fontSize:'12px',color:'#c0c5d8',lineHeight:'1.8'}},[
         el('div',{},[el('span',{style:{fontWeight:'900',color:'#6c8ef0'}},nameYou()+': '),(robCagr!=null?fmtPctSigned(robCagr)+'/yr compound (CAGR)':'—')+', '+(avg(yoyRob)!=null?fmtPctSigned(avg(yoyRob))+'/yr simple average':'')]),
-        el('div',{},[el('span',{style:{fontWeight:'900',color:'#a06cf0'}},namePartner()+': '),(tinaCagr!=null?fmtPctSigned(tinaCagr)+'/yr compound (CAGR)':'—')+', '+(avg(yoyTina)!=null?fmtPctSigned(avg(yoyTina))+'/yr simple average':'')]),
-        el('div',{},[el('span',{style:{fontWeight:'900',color:'#5dd87a'}},'Combined: '),(combCagr!=null?fmtPctSigned(combCagr)+'/yr compound (CAGR)':'—')]),
+        state.hasPartner?el('div',{},[el('span',{style:{fontWeight:'900',color:'#a06cf0'}},namePartner()+': '),(tinaCagr!=null?fmtPctSigned(tinaCagr)+'/yr compound (CAGR)':'—')+', '+(avg(yoyTina)!=null?fmtPctSigned(avg(yoyTina))+'/yr simple average':'')]):null,
+        state.hasPartner?el('div',{},[el('span',{style:{fontWeight:'900',color:'#5dd87a'}},'Combined: '),(combCagr!=null?fmtPctSigned(combCagr)+'/yr compound (CAGR)':'—')]):null,
         el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'6px'}},'These include each year\'s concessional contributions, not just investment performance — balance growth = contributions + returns, and this can\'t separate the two. Contributions were a bigger share of the balance in earlier years, so treat this as an upper-bound ballpark for the Returns sliders, not a like-for-like market return.')
       ])));
     }
@@ -1839,12 +1891,19 @@ function render(){
           onClick:function(){
             // Full dataset (all rows, not just the displayed slice), raw
             // numbers rather than formatted strings, so it's usable in Excel.
-            var csvHeaders=['Year','Age','PartnerAge','Phase','Stage','YouClose','PartnerClose','Combined','YouYoYReturn','PartnerYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','YouCC','PartnerCC','YouNCC','PartnerNCC','YouDiv293Tax','PartnerDiv293Tax'];
+            var csvHeaders=state.hasPartner
+              ?['Year','Age','PartnerAge','Phase','Stage','YouClose','PartnerClose','Combined','YouYoYReturn','PartnerYoYReturn','CombinedYoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','YouCC','PartnerCC','YouNCC','PartnerNCC','YouDiv293Tax','PartnerDiv293Tax']
+              :['Year','Age','Phase','Stage','Close','YoYReturn','GrossSpend','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','CC','NCC','Div293Tax'];
             var csvRows=rows.map(function(r){
-              return [yearForAge(r.age),r.age,r.tinaAge,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
-                r.robReturn!=null?r.robReturn:'',r.tinaReturn!=null?r.tinaReturn:'',r.combinedReturn!=null?r.combinedReturn:'',
-                r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.tinaCC||0,
-                r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
+              if(state.hasPartner){
+                return [yearForAge(r.age),r.age,r.tinaAge,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
+                  r.robReturn!=null?r.robReturn:'',r.tinaReturn!=null?r.tinaReturn:'',r.combinedReturn!=null?r.combinedReturn:'',
+                  r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.tinaCC||0,
+                  r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
+              }
+              return [yearForAge(r.age),r.age,r.phase,r.stage||'',r.robClose,
+                r.robReturn!=null?r.robReturn:'',
+                r.grossSpend||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.robNCC||0,r.rDiv293||0];
             });
             var csv=[csvHeaders].concat(csvRows).map(function(row){
               return row.map(function(v){
@@ -1864,17 +1923,19 @@ function render(){
     var a60=rows.filter(function(r){return r.age===60;})[0];
     var p67adv=a67?a67.pension:0;
     var advTbl=[
-      ['Earliest retirement',String(er),'Combined '+fmt(aRet.combinedClose)],
-      [possYou()+' balance at retire',fmt(aRet.robClose),'—'],
-      [namePartner()+' balance at retire',fmt(aRet.tinaClose),'—'],
+      ['Earliest retirement',String(er),(state.hasPartner?'Combined ':'')+fmt(aRet.combinedClose)],
+      [possYou()+' balance at retire',fmt(aRet.robClose),'—']
+    ];
+    if(state.hasPartner)advTbl.push([namePartner()+' balance at retire',fmt(aRet.tinaClose),'—']);
+    advTbl.push(
       ['Golden spend',fmt(state.spendGolden),'Gross / year'],
       ['Silver spend',fmt(state.spendSilver),'Gross / year'],
       ['Legacy spend',fmt(state.spendLegacy),'Gross / year'],
       ['Other assets',fmt(tot),'Income '+fmt(oiFirstRow?oiFirstRow.otherIncome:0)+'/yr from age '+(state.otherIncomeStartAge+1)],
       ['Age Pension (age 67)',p67adv?fmt(p67adv):'Below threshold','Assets & income tested'],
-      ['Balance at 90',fmt(a90.combinedClose),nameYou()+' '+fmt(a90.robClose)+' | '+namePartner()+' '+fmt(a90.tinaClose)],
+      ['Balance at 90',fmt(a90.combinedClose),state.hasPartner?(nameYou()+' '+fmt(a90.robClose)+' | '+namePartner()+' '+fmt(a90.tinaClose)):'—'],
       ['Fund exhaustion',exh?'Age '+exh.age:'Not projected','Horizon: age '+state.endAge]
-    ];
+    );
     if(state.shock.enabled&&rowsShock){
       // Bug fix: this block previously called `cards.appendChild(...)`, a
       // variable that only exists in the 'super' tab branch. Referencing it
@@ -1892,20 +1953,23 @@ function render(){
     if(state.div293&&state.div293.enabled){
       var rDiv293Tot=rows.filter(function(r){return r.phase==='FORECAST';}).reduce(function(s,r){return s+(r.rDiv293||0);},0);
       var tDiv293Tot=rows.filter(function(r){return r.phase==='FORECAST';}).reduce(function(s,r){return s+(r.tDiv293||0);},0);
-      advTbl.push(['Division 293 tax (lifetime)',fmt(rDiv293Tot+tDiv293Tot),nameYou()+' '+fmt(rDiv293Tot)+' | '+namePartner()+' '+fmt(tDiv293Tot)+' · threshold '+fmt(state.div293.threshold)]);
+      advTbl.push(['Division 293 tax (lifetime)',fmt(rDiv293Tot+tDiv293Tot),(state.hasPartner?nameYou()+' '+fmt(rDiv293Tot)+' | '+namePartner()+' '+fmt(tDiv293Tot)+' · ':'')+'threshold '+fmt(state.div293.threshold)]);
     }
     if(state.tbc&&state.tbc.enabled){
       var robTBCRow=rows.filter(function(r){return r.phase==='FORECAST'&&r.robOverTBC;})[0];
       var tinaTBCRow=rows.filter(function(r){return r.phase==='FORECAST'&&r.tinaOverTBC;})[0];
       if(robTBCRow||tinaTBCRow){
-        advTbl.push(['Transfer Balance Cap exceeded',nameYou()+': '+(robTBCRow?'from age '+robTBCRow.age:'no')+' · '+namePartner()+': '+(tinaTBCRow?'from age '+tinaTBCRow.tinaAge:'no'),
-          'Excess above cap taxed at 15%, not 0%, in retirement']);
+        var tbcNote=state.hasPartner
+          ?nameYou()+': '+(robTBCRow?'from age '+robTBCRow.age:'no')+' · '+namePartner()+': '+(tinaTBCRow?'from age '+tinaTBCRow.tinaAge:'no')
+          :'From age '+robTBCRow.age;
+        advTbl.push(['Transfer Balance Cap exceeded',tbcNote,'Excess above cap taxed at 15%, not 0%, in retirement']);
       }
     }
     if(state.lumpSums.length>0){
       state.lumpSums.forEach(function(ls){
         var sign=ls.type==='outflow'?'-':'+';
-        advTbl.push(['Event: '+ls.label,'Age '+ls.age+' · '+sign+fmt(ls.amount),ls.who+(ls.downsizer?' (downsizer)':'')]);
+        var whoLbl=ls.who==='rob'?nameYou():ls.who==='tina'?namePartner():'Both';
+        advTbl.push(['Event: '+ls.label,'Age '+ls.age+' · '+sign+fmt(ls.amount),state.hasPartner?(whoLbl+(ls.downsizer?' (downsizer)':'')):(ls.downsizer?'Downsizer':'—')]);
       });
     }
     rightCol.appendChild(panel('Assumptions & Events',mkTbl(['Item','Value','Note'],advTbl)));
@@ -1916,11 +1980,14 @@ function render(){
     var sbCtrl=el('div',{});
     sbCtrl.appendChild(tog(state.showScenarioB?'Show on chart: ON':'Show on chart: OFF',state.showScenarioB,function(){state.showScenarioB=!state.showScenarioB;render();}));
     sbCtrl.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',margin:'6px 0 10px'}},'Scenario B uses same lump sums as A. Amber dashed line on chart.'));
-    [['B: '+nameYou()+' work return','robWorkReturn'],['B: '+namePartner()+' work return','tinaWorkReturn'],['B: Retirement return','retireReturn']].forEach(function(x){
+    var sbFields=[['B: '+nameYou()+' work return','robWorkReturn']];
+    if(state.hasPartner)sbFields.push(['B: '+namePartner()+' work return','tinaWorkReturn']);
+    sbFields.push(['B: Retirement return','retireReturn']);
+    sbFields.forEach(function(x){
       sbCtrl.appendChild(sld(x[0],x[1]==='retireReturn'?0:3,15,0.05,sb[x[1]]*100,fmtPct(sb[x[1]]),function(v){sb[x[1]]=v/100;render();}));
     });
     sbCtrl.appendChild(sld('B: '+nameYou()+' '+verbYou('retire','retires')+' at',55,70,1,sb.robRetireAge,String(sb.robRetireAge),function(v){sb.robRetireAge=v;render();}));
-    sbCtrl.appendChild(sld('B: '+namePartner()+' retires at',55,70,1,sb.tinaRetireAge,String(sb.tinaRetireAge),function(v){sb.tinaRetireAge=v;render();}));
+    if(state.hasPartner)sbCtrl.appendChild(sld('B: '+namePartner()+' retires at',55,70,1,sb.tinaRetireAge,String(sb.tinaRetireAge),function(v){sb.tinaRetireAge=v;render();}));
     sbCtrl.appendChild(sld('B: Golden spend',50000,500000,5000,sb.spendGolden,fmt(sb.spendGolden),function(v){sb.spendGolden=v;render();}));
     sbCtrl.appendChild(sld('B: Silver spend',50000,500000,5000,sb.spendSilver,fmt(sb.spendSilver),function(v){sb.spendSilver=v;render();}));
     sbCtrl.appendChild(sld('B: Legacy spend',50000,500000,5000,sb.spendLegacy,fmt(sb.spendLegacy),function(v){sb.spendLegacy=v;render();}));
@@ -1929,13 +1996,17 @@ function render(){
       // sb (=state.scenarioB) doesn't carry its own startAge/tinaStartAge —
       // Scenario B reuses the same two people's current ages, just with
       // different retire-age/return/spend assumptions.
-      var erBOffset=Math.min(yearsToRetire(state.startAge,sb.robRetireAge),yearsToRetire(state.tinaStartAge,sb.tinaRetireAge));
+      var erBOffset=state.hasPartner
+        ?Math.min(yearsToRetire(state.startAge,sb.robRetireAge),yearsToRetire(state.tinaStartAge,sb.tinaRetireAge))
+        :yearsToRetire(state.startAge,sb.robRetireAge);
       var erB=state.startAge+erBOffset;
       var aRetB=rowsB.filter(function(r){return r.age===erB;})[0]||rowsB[0];
       var a90B=rowsB.filter(function(r){return r.age===90;})[0]||rowsB[rowsB.length-1];
       var exhB=rowsB.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
       var cmp=[
-        ['Retire ages',nameYou()+' '+state.robRetireAge+' / '+namePartner()+' '+state.tinaRetireAge,nameYou()+' '+sb.robRetireAge+' / '+namePartner()+' '+sb.tinaRetireAge],
+        ['Retire ages',
+          state.hasPartner?(nameYou()+' '+state.robRetireAge+' / '+namePartner()+' '+state.tinaRetireAge):(nameYou()+' '+state.robRetireAge),
+          state.hasPartner?(nameYou()+' '+sb.robRetireAge+' / '+namePartner()+' '+sb.tinaRetireAge):(nameYou()+' '+sb.robRetireAge)],
         ['Combined at retirement',fmt(aRet.combinedClose),fmt(aRetB.combinedClose)],
         ['Golden spend',fmt(state.spendGolden),fmt(sb.spendGolden)],
         ['Silver spend',fmt(state.spendSilver),fmt(sb.spendSilver)],
