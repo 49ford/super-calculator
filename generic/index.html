@@ -4,6 +4,15 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Superannuation Calculator — Free Retirement Projection Tool</title>
+<meta name="description" content="A free, private Australian superannuation & retirement projection calculator. Enter your own numbers — nothing is uploaded, everything stays in your browser."/>
+<meta property="og:type" content="website"/>
+<meta property="og:url" content="https://49ford.github.io/super-calculator/generic/"/>
+<meta property="og:title" content="Superannuation Calculator — Free Retirement Projection Tool"/>
+<meta property="og:description" content="A free, private Australian superannuation & retirement projection calculator. Enter your own numbers — nothing is uploaded, everything stays in your browser."/>
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="Superannuation Calculator — Free Retirement Projection Tool"/>
+<meta name="twitter:description" content="A free, private Australian superannuation & retirement projection calculator. Enter your own numbers — nothing is uploaded, everything stays in your browser."/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230f1117'/%3E%3Cpath d='M20 70 L38 45 L52 58 L80 25' stroke='%235dd87a' stroke-width='8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0f1117;font-family:'DM Sans','Segoe UI',sans-serif}
@@ -57,10 +66,46 @@ button{font-family:'DM Sans','Segoe UI',sans-serif}
 <script>
 (function(){
 'use strict';
+// DOM-built (not innerHTML+inline-onclick) so the Reset button can close
+// over LS_KEY safely — inline "onclick" strings run in global scope and
+// can't see variables scoped inside this IIFE.
 function showFatal(msg,err){
   console.error(msg,err||'');
   var r=document.getElementById('root');
-  if(r)r.innerHTML='<div style="padding:32px;background:#0f1117;color:#f06c6c;font-family:monospace"><h2>Calculator Error</h2><pre style="color:#f0b96c;margin-top:12px;white-space:pre-wrap">'+esc(msg)+'</pre></div>';
+  if(!r)return;
+  r.innerHTML='';
+  var wrap=document.createElement('div');
+  wrap.style.cssText='padding:32px;max-width:640px;margin:0 auto;background:#0f1117;color:#f06c6c;font-family:monospace';
+  var h=document.createElement('h2');
+  h.textContent='Calculator Error';
+  wrap.appendChild(h);
+  var p=document.createElement('pre');
+  p.style.cssText='color:#f0b96c;margin-top:12px;white-space:pre-wrap;font-size:12px';
+  p.textContent=String(msg==null?'Unknown error':msg);
+  wrap.appendChild(p);
+  var hint=document.createElement('div');
+  hint.style.cssText='color:#7a8099;font-size:12px;margin-top:14px;line-height:1.5';
+  hint.textContent='Something went wrong, usually from an unusual combination of inputs. Try Reload first — if the problem keeps happening, Reset clears your saved inputs back to the defaults.';
+  wrap.appendChild(hint);
+  var btnRow=document.createElement('div');
+  btnRow.style.cssText='display:flex;gap:10px;margin-top:16px';
+  var reloadBtn=document.createElement('button');
+  reloadBtn.type='button';
+  reloadBtn.textContent='Just Reload';
+  reloadBtn.style.cssText='padding:8px 16px;border-radius:8px;border:1px solid #3a3f55;background:transparent;color:#e8eaf0;cursor:pointer;font-weight:700;font-family:inherit';
+  reloadBtn.addEventListener('click',function(){location.reload();});
+  var resetBtn=document.createElement('button');
+  resetBtn.type='button';
+  resetBtn.textContent='Reset & Reload';
+  resetBtn.style.cssText='padding:8px 16px;border-radius:8px;border:1px solid #f06c6c;background:rgba(240,108,108,.1);color:#f06c6c;cursor:pointer;font-weight:700;font-family:inherit';
+  resetBtn.addEventListener('click',function(){
+    try{localStorage.removeItem(LS_KEY);}catch(e){}
+    location.reload();
+  });
+  btnRow.appendChild(reloadBtn);
+  btnRow.appendChild(resetBtn);
+  wrap.appendChild(btnRow);
+  r.appendChild(wrap);
 }
 // ─── HTML escaping (prevents user-entered text, e.g. lump-sum labels, from
 // being interpreted as markup when we build innerHTML strings) ─────────────
@@ -70,7 +115,14 @@ function esc(s){
   });
 }
 // Coerce a raw input value to a finite number, falling back if invalid.
-function numOr(v,fallback){var n=+v;return isFinite(n)?n:(fallback||0);}
+// Strips a leading currency symbol, thousands commas, and stray whitespace
+// first, so a pasted/typed "$50,000" resolves to 50000 instead of silently
+// falling back to 0 with no feedback.
+function numOr(v,fallback){
+  if(typeof v==='string')v=v.replace(/[$,\s]/g,'');
+  var n=+v;
+  return isFinite(n)?n:(fallback||0);
+}
 try{
 
 // ─── Pension engine ────────────────────────────────────────────────────────
@@ -598,10 +650,31 @@ function buildTimeline(st,returnOverrideFn){
       excessMDCash:excessMDBal,
       robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,rDiv293,tDiv293,
       robOverTBC,tinaOverTBC,tbcCap:isFinite(tbcCap)?tbcCap:null,lsRob,lsTina,lsItems,
-      robRetires:age===st.robRetireAge,tinaRetires:st.hasPartner&&tinaAge===st.tinaRetireAge});
+      // If a retirement age is set below the person's starting age (already
+      // retired before the projection even begins), the exact-age match
+      // below never fires anywhere in the table — flag it on the first row
+      // instead so the retirement badge still shows up somewhere.
+      robRetires:age===st.robRetireAge||(st.robRetireAge<st.startAge&&age===st.startAge),
+      tinaRetires:st.hasPartner&&(tinaAge===st.tinaRetireAge||(st.tinaRetireAge<st.tinaStartAge&&tinaAge===st.tinaStartAge))});
   }
   var filterFromAge=st.startAge;
-  return rows.filter(function(r){return r.age>=filterFromAge;});
+  var out=rows.filter(function(r){return r.age>=filterFromAge;});
+  // Defensive fallback: if the loop above never ran (e.g. startAge>=endAge —
+  // shouldn't happen via the UI sliders, which clamp against each other, but
+  // could still occur via a malformed/edited JSON import), synthesize a
+  // single safe row from the opening balances rather than returning an
+  // empty array, which would crash every downstream rows[0]/rows.filter(...)
+  // consumer with an uncaught TypeError.
+  if(!out.length){
+    out=[{age:st.startAge,tinaAge:st.tinaStartAge,phase:'FORECAST',stage:'',
+      robClose:st.robSeed||0,tinaClose:st.hasPartner?(st.tinaSeed||0):0,
+      combinedClose:(st.robSeed||0)+(st.hasPartner?(st.tinaSeed||0):0),
+      grossSpend:0,availableSpend:0,spendShortfall:0,otherIncome:0,debtPaydownCash:0,pension:0,ptIncome:0,
+      robSpend:0,tinaSpend:0,excessMDCash:0,robCC:0,tinaCC:0,robNCC:0,tinaNCC:0,rDiv293:0,tDiv293:0,
+      robOverTBC:false,tinaOverTBC:false,tbcCap:null,lsRob:0,lsTina:0,lsItems:[],
+      robRetires:false,tinaRetires:false}];
+  }
+  return out;
 }
 function buildTimelineB(){
   var sb=Object.assign({},state,state.scenarioB,{caps:state.caps,lumpSums:state.lumpSums});
@@ -778,12 +851,20 @@ function sld(label,min,max,step,val,disp,fn){
 }
 function numI(label,val,fn,opts){
   opts=opts||{};
-  var inp=el('input',{type:'number',value:String(val),step:String(opts.step||1),
-    min:String(opts.min||0),'aria-label':label,style:{width:'100%'}});
+  var attrs={type:'number',value:String(val),step:String(opts.step||1),
+    min:String(opts.min||0),'aria-label':label,style:{width:'100%'}};
+  if(opts.max!=null)attrs.max=String(opts.max);
+  var inp=el('input',attrs);
   // Guard against NaN from empty/invalid input (e.g. user clears the field
-  // or types a non-numeric value) silently propagating into the model.
+  // or types a non-numeric value) silently propagating into the model, and
+  // clamp to the field's declared min/max — the HTML min/max attributes
+  // only affect the spinner arrows and validity styling, not what's
+  // actually accepted on change, so a typed/pasted negative number or an
+  // out-of-range value would otherwise pass straight into the model.
   inp.addEventListener('change',function(e){
     var v=numOr(e.target.value,opts.min||0);
+    if(opts.min!=null)v=Math.max(opts.min,v);
+    if(opts.max!=null)v=Math.min(opts.max,v);
     inp.value=String(v);
     fn(v);
   });
@@ -1407,6 +1488,12 @@ function isValidScenarioShape(obj){
   if(obj.partnerName!==undefined&&typeof obj.partnerName!=='string')return false;
   if(obj.contribMode!==undefined&&obj.contribMode!=='income'&&obj.contribMode!=='total')return false;
   if(obj.hasPartner!==undefined&&typeof obj.hasPartner!=='boolean')return false;
+  // Relational check: a current age at/past the horizon end age produces an
+  // empty projection — reject it here with a clear error rather than
+  // silently loading a scenario that renders as a single fallback row.
+  var sa=obj.startAge!==undefined?obj.startAge:defaultState().startAge;
+  var ea=obj.endAge!==undefined?obj.endAge:defaultState().endAge;
+  if(sa>=ea)return false;
   return true;
 }
 var importInp=el('input',{type:'file',accept:'application/json',style:{display:'none'}});
@@ -1469,7 +1556,20 @@ function tabBtn(id,label){
     onClick:function(){state.tab=id;render();}},label);
 }
 
+// render() is called from dozens of event-handler closures (slider drags,
+// toggles, imports...) that run long after the boot-time try/catch below
+// has already completed — that outer try only ever protected the very
+// first render() call. Wrapping the real work here means every later
+// render(), triggered by any input, is protected too, instead of silently
+// leaving a half-updated or blank page with only a console error.
 function render(){
+  try{
+    renderInner();
+  }catch(e){
+    showFatal(e&&e.message?e.message:String(e),e);
+  }
+}
+function renderInner(){
   saveState();
   tabsBar.innerHTML='';
   ['super','adviser','scenariob'].forEach(function(t){
@@ -1511,7 +1611,7 @@ function render(){
     var d=el('div',{});
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'8px',lineHeight:'1.5'}},'This is a blank template — nothing below is pre-filled with anyone\'s real data. Enter your own numbers, in today\'s dollars.'));
     d.appendChild(txtI('Your name (optional)',state.yourName,function(v){state.yourName=v;render();},'e.g. Rob'));
-    d.appendChild(sld(possYou()+' current age',18,75,1,state.startAge,String(state.startAge),function(v){state.startAge=v;render();}));
+    d.appendChild(sld(possYou()+' current age',18,75,1,state.startAge,String(state.startAge),function(v){state.startAge=Math.min(v,state.endAge-1);render();}));
     d.appendChild(numI(possYou()+' current super balance ($)',state.robSeed,function(v){state.robSeed=v;render();},{step:5000,min:0}));
     d.appendChild(tog(state.hasPartner?'Planning with a partner':'No partner — single-person plan',state.hasPartner,function(){state.hasPartner=!state.hasPartner;render();}));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},state.hasPartner?
@@ -1545,7 +1645,7 @@ function render(){
       d.appendChild(sld(namePartner()+' retires at',55,70,1,state.tinaRetireAge,String(state.tinaRetireAge),function(v){state.tinaRetireAge=v;render();}));
       if(state.tinaRetireAge<60)d.appendChild(el('div',{style:{fontSize:'10px',color:'#f0b96c',marginTop:'-4px',marginBottom:'6px'}},'⚠ Below preservation age (60) — early access requires a condition of release.'));
     }
-    d.appendChild(sld('Horizon (end age)',70,100,1,state.endAge,String(state.endAge),function(v){state.endAge=v;render();}));
+    d.appendChild(sld('Horizon (end age)',70,100,1,state.endAge,String(state.endAge),function(v){state.endAge=Math.max(v,state.startAge+1);render();}));
     return d;
   }));
 
