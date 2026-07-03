@@ -139,6 +139,21 @@ function ccCapForAge(age,st){
   return Math.max(base,Math.floor(grown/2500)*2500);
 }
 function nccCapForAge(age,st){return ccCapForAge(age,st)*4;}
+// Actual concessional contribution made in a given projection year — as
+// distinct from ccCapForAge() above, which is just the legislated ceiling.
+// Not everyone contributes right up to the cap (e.g. standard employer
+// Super Guarantee on a modest income is often well under it). Two input
+// modes, per person: 'income' derives the contribution from income × SG
+// rate plus any extra salary-sacrifice/voluntary amount; 'total' is a flat
+// $ figure. Both are escalated the same way spend is (idx(), today's-$ ->
+// nominal) so a "total" left at its default (= the cap's base figure)
+// keeps tracking the escalating cap exactly, reproducing this tool's
+// original behaviour of contributing right up to the cap every year.
+// Either way, whatever's actually contributed can never exceed the cap.
+function contribForPerson(mode,income,extra,total,age,st){
+  var desired=mode==='income'?idx(income,age,st)*st.sgRate+idx(extra,age,st):idx(total,age,st);
+  return Math.max(0,Math.min(desired,ccCapForAge(age,st)));
+}
 // General Transfer Balance Cap for a given projection age. $2.1m is the
 // confirmed 1 July 2026 figure; escalates in $100k steps (CPI-style
 // approximation of the real indexation mechanism) if enabled.
@@ -245,6 +260,24 @@ function defaultState(){
     // captured in ACTUALS instead). Escalates further via `indexation`. NCC
     // annual cap is derived as 4× this (currently $130,000).
     caps:{after54:32500},
+    // How much is ACTUALLY contributed concessionally each working year —
+    // separate from the legislated cap above, which is just a ceiling. Not
+    // everyone contributes right up to the cap (e.g. standard employer Super
+    // Guarantee on a modest income is often well under it). Two ways to
+    // estimate it, per person: 'income' derives it from income × SG rate
+    // plus any extra salary-sacrifice/voluntary amount; 'total' is just a
+    // flat $ figure. Either way the actual contribution used in the
+    // projection is capped at the legislated cap (escalating caps.after54).
+    // Defaults reproduce the tool's original behaviour (contributing right
+    // up to the cap every year) so nothing changes unless this is touched.
+    contribMode:'total',
+    sgRate:0.12,
+    robIncome:100000,
+    tinaIncome:100000,
+    robExtraContrib:0,
+    tinaExtraContrib:0,
+    robContribTotal:32500,
+    tinaContribTotal:32500,
     // Division 293: extra 15% tax on concessional contributions when
     // (income + CC) exceeds the threshold. The $250k threshold is fixed by
     // law (unindexed since 2017). Off by default — needs each person's
@@ -407,8 +440,8 @@ function buildTimeline(st,returnOverrideFn){
   for(var age=st.startAge,tinaAge=st.tinaStartAge;age<=st.endAge;age++,tinaAge++){
     var yearOffset=age-st.startAge;
     var rWork=age<st.robRetireAge,tWork=tinaAge<st.tinaRetireAge;
-    var rCC=rWork?ccCapForAge(age,st):0;
-    var tCC=tWork?ccCapForAge(age,st):0;
+    var rCC=rWork?contribForPerson(st.contribMode,st.robIncome,st.robExtraContrib,st.robContribTotal,age,st):0;
+    var tCC=tWork?contribForPerson(st.contribMode,st.tinaIncome,st.tinaExtraContrib,st.tinaContribTotal,age,st):0;
     // Division 293: extra 15% tax on concessional contributions when
     // (income + CC) exceeds the (unindexed) threshold. Applied on top of the
     // normal 15% contributions tax, so total tax on the excess is 30%.
@@ -1310,7 +1343,7 @@ root.style.cssText='height:100vh;display:flex;flex-direction:column;overflow:hid
 // otherwise silently load garbage numbers into the model with no warning.
 function isValidScenarioShape(obj){
   if(!obj||typeof obj!=='object')return false;
-  var numFields=['startAge','tinaStartAge','robRetireAge','tinaRetireAge','endAge','spendGolden','spendSilver','spendLegacy','robSeed','tinaSeed'];
+  var numFields=['startAge','tinaStartAge','robRetireAge','tinaRetireAge','endAge','spendGolden','spendSilver','spendLegacy','robSeed','tinaSeed','sgRate','robIncome','tinaIncome','robExtraContrib','tinaExtraContrib','robContribTotal','tinaContribTotal'];
   for(var i=0;i<numFields.length;i++){
     var v=obj[numFields[i]];
     if(v===undefined)continue; // deepMerge will fill missing fields from defaults
@@ -1325,6 +1358,7 @@ function isValidScenarioShape(obj){
   if(obj.lumpSums!==undefined&&!Array.isArray(obj.lumpSums))return false;
   if(obj.yourName!==undefined&&typeof obj.yourName!=='string')return false;
   if(obj.partnerName!==undefined&&typeof obj.partnerName!=='string')return false;
+  if(obj.contribMode!==undefined&&obj.contribMode!=='income'&&obj.contribMode!=='total')return false;
   return true;
 }
 var importInp=el('input',{type:'file',accept:'application/json',style:{display:'none'}});
@@ -1647,12 +1681,31 @@ function render(){
   ctrl.appendChild(collSec('advanced','Concessional Caps',function(){
     var d=el('div',{});
     d.appendChild(numI('Concessional cap ($, FY26-27)',state.caps.after54,function(v){state.caps.after54=v;render();},{step:500,min:0}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},
+      'This is the legislated ceiling — the most that can be contributed concessionally per person per year. It\'s not necessarily what you actually contribute; set that below.'));
+    d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',margin:'8px 0 4px'}},'Actual contribution amount'));
+    d.appendChild(tog(state.contribMode==='income'?'Estimate: Income × SG% + extra':'Estimate: Total $ amount',
+      state.contribMode==='income',function(){state.contribMode=state.contribMode==='income'?'total':'income';render();}));
+    if(state.contribMode==='income'){
+      d.appendChild(sld('Super Guarantee rate',9,15,0.1,state.sgRate*100,fmtPct(state.sgRate),function(v){state.sgRate=v/100;render();}));
+      d.appendChild(numI(nameYou()+' income ($/yr)',state.robIncome,function(v){state.robIncome=v;render();},{step:5000,min:0}));
+      d.appendChild(numI(nameYou()+' extra/salary-sacrifice ($/yr)',state.robExtraContrib,function(v){state.robExtraContrib=v;render();},{step:1000,min:0}));
+      d.appendChild(numI(namePartner()+' income ($/yr)',state.tinaIncome,function(v){state.tinaIncome=v;render();},{step:5000,min:0}));
+      d.appendChild(numI(namePartner()+' extra/salary-sacrifice ($/yr)',state.tinaExtraContrib,function(v){state.tinaExtraContrib=v;render();},{step:1000,min:0}));
+      d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
+        'Contribution = income × SG rate + extra, capped at the legislated cap above. SG rate is editable in case it changes — check the current legislated rate if unsure.'));
+    } else {
+      d.appendChild(numI(nameYou()+' concessional contribution ($/yr)',state.robContribTotal,function(v){state.robContribTotal=v;render();},{step:500,min:0}));
+      d.appendChild(numI(namePartner()+' concessional contribution ($/yr)',state.tinaContribTotal,function(v){state.tinaContribTotal=v;render();},{step:500,min:0}));
+      d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
+        'Flat $ figure, capped at the legislated cap above. Left at the cap\'s default value, this reproduces contributing right up to the cap every year.'));
+    }
     d.appendChild(sld('Contributions tax',0,0.30,0.01,state.contribTax,fmtPct(state.contribTax),function(v){state.contribTax=v;render();}));
     d.appendChild(tog(state.indexation.enabled?'Auto-escalate caps/thresholds/spend (CPI) ★':'Auto-escalate: OFF (figures frozen at today\'s law)',
       state.indexation.enabled,function(){state.indexation.enabled=!state.indexation.enabled;render();}));
     d.appendChild(sld('CPI / escalation rate',1,8,0.1,state.inflationRate*100,fmtPct(state.inflationRate),function(v){state.inflationRate=v/100;render();}));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'4px',lineHeight:'1.5'}},
-      'When ON, concessional/NCC caps, the Transfer Balance Cap, and Age Pension thresholds grow each projection year at this rate, and your Golden/Silver/Legacy spend (entered in today\'s dollars) is grown to nominal terms the same way. The Division 293 threshold stays fixed — it is not indexed by law.'));
+      'When ON, concessional/NCC caps, the Transfer Balance Cap, and Age Pension thresholds grow each projection year at this rate, and your Golden/Silver/Legacy spend and actual concessional contributions (entered in today\'s dollars) are grown to nominal terms the same way. The Division 293 threshold stays fixed — it is not indexed by law.'));
     return d;
   }));
 
