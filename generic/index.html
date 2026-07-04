@@ -167,6 +167,14 @@ function earliestRetireYearOffset(st){
   if(!st.hasPartner)return yearsToRetire(st.startAge,st.robRetireAge);
   return Math.min(yearsToRetire(st.startAge,st.robRetireAge),yearsToRetire(st.tinaStartAge,st.tinaRetireAge));
 }
+// Your age (robAge) in the year Other Assets income actually switches on —
+// depends on whichever retirement happens first plus the configurable
+// otherIncomeStartOffset, so (unlike a fixed age) it moves automatically
+// with whatever retirement ages/offset are currently set. Used anywhere
+// the UI/adviser notes need to show this as a concrete age.
+function otherIncomeStartAge(st){
+  return st.startAge+earliestRetireYearOffset(st)+1+(st.otherIncomeStartOffset||0);
+}
 // Translate a Partner-space age (e.g. state.tinaRetireAge, or an age at
 // which some Partner-specific event happens) into the equivalent robAge —
 // i.e. what your age will be at that same calendar point — so it can be
@@ -303,16 +311,10 @@ function defaultState(){
     otherAssetsReturn:0.06,
     otherAssetsCpi:0.035,
     otherAssetsRateMode:'yield',
-    otherIncomeStartAge:60,
-    // Cash flow age 55-60 (before Other Income proper starts at 61) that
-    // isn't invested or available for spending — it's going straight to
-    // paying down loans/debt. Purely informational: shown in the Other Inc
-    // column in a different colour so it's not confused with real invested
-    // income, but never added to netSpend, otherIncome, or the pension test.
-    // Grows at its own fixed rate (not the global CPI/indexation toggle) —
-    // locked at 1.5% p.a. for this 5-year period regardless of what the
-    // Auto-escalate setting elsewhere is doing.
-    debtPaydown:{enabled:false,startAge:55,endAge:60,amount:0,growthRate:0.015},
+    // Other Assets income switches on once someone's actually retired
+    // (anyRet), this many years after that first retirement — 0 = starts
+    // the same year retirement begins. Replaces the old fixed-age trigger.
+    otherIncomeStartOffset:0,
     usePension:true,
     homeowner:true,
     // Age Pension figures: 20 Mar 2026 – 19 Sep 2026 Services Australia rates
@@ -401,7 +403,7 @@ function defaultState(){
     // Column axis is always retirement-return delta.
     sensitivityAxis:'spend',
     netWorth:{homeValue:0,homeCpi:0.04},
-    collapsed:{starting:false,returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true,debtPaydown:true}
+    collapsed:{starting:false,returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true}
   };
 }
 
@@ -668,22 +670,18 @@ function buildTimeline(st,returnOverrideFn){
     rBal=Math.max(0,rBal+lsRob);
     tBal=st.hasPartner?Math.max(0,tBal+lsTina):0;
     // ── Other income ────────────────────────────────────────────────────────
+    // Income from the Other Assets (real estate/shares/other) buckets is
+    // off entirely during accumulation — it switches on once someone has
+    // actually retired (anyRet), X years after that first retirement, per
+    // otherIncomeStartOffset (0 = starts the same year retirement begins,
+    // matching the row the "retires" badge appears on). This replaces the
+    // old fixed-age trigger, which ran on a hardcoded age regardless of
+    // when retirement actually happened.
     var otherIncome=0;
-    if(anyRet&&age>st.otherIncomeStartAge){
-      otherIncome=totalOther*st.otherAssetsReturn*Math.pow(1+st.otherAssetsCpi,age-st.otherIncomeStartAge-1);
-    }
-    // ── Debt paydown cash (age 55-60, informational only) ──────────────────
-    // Not invested, not available to fund spend, doesn't touch the balance,
-    // the pension test, or netSpend below — purely noted for the timeline
-    // table so it's visible that cash is flowing in during these years, just
-    // not into anything this model tracks. Real Other Income (above) starts
-    // separately at otherIncomeStartAge+1. Grows at its own fixed rate,
-    // independent of the global CPI/indexation toggle and rate — anchored to
-    // its own startAge, not your current age, so it behaves the same however the
-    // start age is configured.
-    var debtPaydownCash=0;
-    if(st.debtPaydown&&st.debtPaydown.enabled&&age>=st.debtPaydown.startAge&&age<=st.debtPaydown.endAge){
-      debtPaydownCash=st.debtPaydown.amount*Math.pow(1+(st.debtPaydown.growthRate||0),age-st.debtPaydown.startAge);
+    var retireStartOffset=earliestRetireOffset+1;
+    var oiTriggerOffset=retireStartOffset+(st.otherIncomeStartOffset||0);
+    if(anyRet&&yearOffset>=oiTriggerOffset){
+      otherIncome=totalOther*st.otherAssetsReturn*Math.pow(1+st.otherAssetsCpi,yearOffset-oiTriggerOffset);
     }
     // ── Age pension ─────────────────────────────────────────────────────────
     // Pension thresholds/rates are indexed forward from today (calendar
@@ -771,7 +769,7 @@ function buildTimeline(st,returnOverrideFn){
     excessMDBal=excessMDBal*(1+mdGrowthRate)+excessMDThisYear;
     rows.push({age,tinaAge,phase:'FORECAST',stage,
       robClose:rBal,tinaClose:tBal,combinedClose:rBal+tBal,
-      grossSpend,availableSpend,spendShortfall,otherIncome,debtPaydownCash,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
+      grossSpend,availableSpend,spendShortfall,otherIncome,pension,ptIncome,robSpend:rSpend,tinaSpend:tSpend,
       excessMDCash:excessMDBal,
       robCC:rCC,tinaCC:tCC,robNCC,tinaNCC,rDiv293,tDiv293,
       robOverTBC,tinaOverTBC,tbcCap:isFinite(tbcCap)?tbcCap:null,lsRob,lsTina,lsItems,
@@ -798,7 +796,7 @@ function buildTimeline(st,returnOverrideFn){
     out=[{age:st.startAge,tinaAge:st.tinaStartAge,phase:'FORECAST',stage:'',
       robClose:st.robSeed||0,tinaClose:st.hasPartner?(st.tinaSeed||0):0,
       combinedClose:(st.robSeed||0)+(st.hasPartner?(st.tinaSeed||0):0),
-      grossSpend:0,availableSpend:0,spendShortfall:0,otherIncome:0,debtPaydownCash:0,pension:0,ptIncome:0,
+      grossSpend:0,availableSpend:0,spendShortfall:0,otherIncome:0,pension:0,ptIncome:0,
       robSpend:0,tinaSpend:0,excessMDCash:0,robCC:0,tinaCC:0,robNCC:0,tinaNCC:0,rDiv293:0,tDiv293:0,
       robOverTBC:false,tinaOverTBC:false,tbcCap:null,lsRob:0,lsTina:0,lsItems:[],
       robRetires:false,tinaRetires:false}];
@@ -1524,7 +1522,7 @@ function narrative(rows){
   var a90=rows.filter(function(r){return r.age===90;})[0]||rows[rows.length-1];
   var exh=rows.filter(function(r){return r.phase==='FORECAST'&&r.combinedClose<=0;})[0];
   var tot=otherTotal();
-  var oi=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
+  var oi=rows.filter(function(r){return r.age===otherIncomeStartAge(state);})[0];
   var ls=state.lumpSums;
   var yn=esc(nameYou()),pn=esc(namePartner()),pyn=esc(possYou()),ppn=esc(possPartner());
   var partnerPhrase=(state.partnerName||'').trim()?pn:'your partner';
@@ -1542,7 +1540,7 @@ function narrative(rows){
     }
   }
   lines.push('Spending is phased: <strong>Golden '+fmt(state.spendGolden)+'</strong> / <strong>Silver '+fmt(state.spendSilver)+'</strong> / <strong>Legacy '+fmt(state.spendLegacy)+'</strong> per year gross, in today\'s dollars'+(state.indexation&&state.indexation.enabled?' (escalated at '+fmtPct(state.inflationRate)+' CPI in the projection)':'')+'. Drawdown is met first from other-asset income, then Age Pension, with the remainder from super.<br><br>');
-  if(tot>0&&oi){lines.push('Other assets total <strong>'+fmt(tot)+'</strong>, generating <strong>'+fmt(oi.otherIncome)+'</strong>/yr from age '+(state.otherIncomeStartAge+1)+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI '+fmtPct(state.otherAssetsCpi)+' p.a.).<br><br>');}
+  if(tot>0&&oi){lines.push('Other assets total <strong>'+fmt(tot)+'</strong>, generating <strong>'+fmt(oi.otherIncome)+'</strong>/yr from age '+otherIncomeStartAge(state)+' ('+fmtPct(state.otherAssetsReturn)+' yield, CPI '+fmtPct(state.otherAssetsCpi)+' p.a.).<br><br>');}
   if(state.minDrawdown&&state.minDrawdown.enabled&&a90.excessMDCash>1000){
     lines.push('📤 <strong>Mandatory minimum drawdown</strong> pulls more out of super than spending needs in later years. Assuming that excess is reinvested (not spent), it grows to an estimated <strong>'+fmt(a90.excessMDCash)+'</strong> outside super by age '+state.endAge+' — shown separately in the Net Worth chart.<br><br>');
   }
@@ -1709,7 +1707,7 @@ function renderInner(){
   var rows=buildTimeline(state);
   var rowsB=state.showScenarioB?buildTimelineB():null;
   var rowsShock=buildShockTimeline();
-  var oiFirstRow=rows.filter(function(r){return r.age===state.otherIncomeStartAge+1;})[0];
+  var oiFirstRow=rows.filter(function(r){return r.age===otherIncomeStartAge(state);})[0];
   var mcRows=getMonteCarloRowsDebounced();
   var nwRows=netWorthRows(rows);
   var er=state.startAge+earliestRetireYearOffset(state);
@@ -1837,7 +1835,7 @@ function renderInner(){
     // ── Investment / other assets: pension-assessable, income-generating ──
     d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',marginBottom:'2px'}},'Investment & Other Assets'));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-1px 0 8px',lineHeight:'1.4'}},
-      'Counted in the Age Pension assets test and, from age '+(state.otherIncomeStartAge+1)+', generate a combined income stream on top of super. Separate from your home below, which isn\'t counted here.'));
+      'Counted in the Age Pension assets test. Generates no income at all while still working — it switches on once you (or your partner, if either retires first) actually retire, and factors into the pension test from then on. Separate from your home below, which isn\'t counted here.'));
     var bucketMeta={
       realestate:{label:'Real Estate',fieldLabel:'Investment property value ($)',hint:'Residential or commercial investment property — not your home (that\'s set separately below).'},
       shares:{label:'Shares',fieldLabel:'Share/investment portfolio value ($)',hint:'Shares, ETFs, managed funds and similar.'},
@@ -1855,9 +1853,11 @@ function renderInner(){
     // remembered, only the editing slider above swaps between them.
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#7a8099',background:'#0a0c12',borderRadius:'8px',padding:'8px 10px',marginBottom:'10px'}},
       bucketKeys.map(function(k){return bucketMeta[k].label+': '+fmt(state.otherAssetsBuckets[k]||0);}).join('  ·  ')+'  ·  Total: '+fmt(tot)));
-    d.appendChild(sld('Other income starts at age',50,75,1,state.otherIncomeStartAge,'from age '+(state.otherIncomeStartAge+1),function(v){state.otherIncomeStartAge=v;render();}));
+    d.appendChild(sld('Other income starts (years after retirement)',0,10,1,state.otherIncomeStartOffset,state.otherIncomeStartOffset===0?'same year, age '+otherIncomeStartAge(state):(state.otherIncomeStartOffset+' yr later, age '+otherIncomeStartAge(state)),function(v){state.otherIncomeStartOffset=v;render();}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-4px',marginBottom:'6px',lineHeight:'1.4'}},
+      'Off entirely while working. Switches on once either of you retires (whichever happens first) — 0 means the same year retirement begins; higher values delay it further, e.g. if you plan to draw on it a few years into retirement instead.'));
     d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',margin:'8px 0 4px'}},'Growth assumptions'));
-    d.appendChild(sld('Yield % (income from age '+(state.otherIncomeStartAge+1)+')',0,12,0.05,state.otherAssetsReturn*100,(state.otherAssetsReturn*100).toFixed(2)+'%',function(v){state.otherAssetsReturn=v/100;render();}));
+    d.appendChild(sld('Yield % (income from age '+otherIncomeStartAge(state)+')',0,12,0.05,state.otherAssetsReturn*100,(state.otherAssetsReturn*100).toFixed(2)+'%',function(v){state.otherAssetsReturn=v/100;render();}));
     d.appendChild(sld('CPI % (annual growth of that income)',0,10,0.1,state.otherAssetsCpi*100,(state.otherAssetsCpi*100).toFixed(2)+'%',function(v){state.otherAssetsCpi=v/100;render();}));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-4px',marginBottom:'4px',lineHeight:'1.4'}},
       'Both apply together — Yield sets how much annual income the combined total above generates once it starts; CPI escalates that income each year after.'));
@@ -1872,20 +1872,6 @@ function renderInner(){
       d.appendChild(sld('Home value ($)',0,5000000,50000,state.netWorth.homeValue,fmt(state.netWorth.homeValue),function(v){state.netWorth.homeValue=v;render();}));
       d.appendChild(sld('Home CPI growth',0,10,0.1,state.netWorth.homeCpi*100,(state.netWorth.homeCpi*100).toFixed(1)+'%',function(v){state.netWorth.homeCpi=v/100;render();}));
     }
-    return d;
-  }));
-
-  ctrl.appendChild(collSec('debtPaydown','Debt Paydown Cash (Age 55-60)',function(){
-    var d=el('div',{});
-    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'6px',lineHeight:'1.5'}},
-      'Cash flowing in before Other Income proper starts at 61, that isn\'t invested and isn\'t available to fund spend — it\'s going straight to paying down loans/debt. Shown in amber in the Timeline\'s Other Inc column so it\'s clearly not the same thing as real invested income; it never affects the super balance, drawdown, or the pension test.'));
-    d.appendChild(tog(state.debtPaydown.enabled?'Debt paydown cash: ON':'Debt paydown cash: OFF',state.debtPaydown.enabled,function(){state.debtPaydown.enabled=!state.debtPaydown.enabled;render();}));
-    d.appendChild(sld('Amount ($/yr, at start age)',0,100000,1000,state.debtPaydown.amount,fmt(state.debtPaydown.amount),function(v){state.debtPaydown.amount=v;render();}));
-    d.appendChild(sld('From age',55,70,1,state.debtPaydown.startAge,String(state.debtPaydown.startAge),function(v){state.debtPaydown.startAge=v;render();}));
-    d.appendChild(sld('To age (inclusive)',55,70,1,state.debtPaydown.endAge,String(state.debtPaydown.endAge),function(v){state.debtPaydown.endAge=v;render();}));
-    d.appendChild(sld('Growth rate (fixed, not CPI)',0,8,0.1,state.debtPaydown.growthRate*100,(state.debtPaydown.growthRate*100).toFixed(1)+'%',function(v){state.debtPaydown.growthRate=v/100;render();}));
-    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'4px'}},
-      'Locked at this rate regardless of the Auto-escalate/CPI setting used elsewhere — deliberately separate since it\'s a fixed loan-paydown schedule, not something tied to inflation.'));
     return d;
   }));
 
@@ -2118,7 +2104,7 @@ function renderInner(){
     rightCol.appendChild(headline);
     var cards=el('div',{class:'cards-grid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:'12px'}});
     cards.appendChild(card(state.hasPartner?'Combined at retirement':'Balance at retirement',fmt(aRet.combinedClose),state.hasPartner?'Age '+er+' · '+nameYou()+' '+fmt(aRet.robClose):'Age '+er,'#5dd87a'));
-    cards.appendChild(card('Other income @ '+(state.otherIncomeStartAge+1),fmt(oiFirstRow?oiFirstRow.otherIncome:0),fmt(tot)+' × '+fmtPct(state.otherAssetsReturn),'#6c8ef0'));
+    cards.appendChild(card('Other income @ '+otherIncomeStartAge(state),fmt(oiFirstRow?oiFirstRow.otherIncome:0),fmt(tot)+' × '+fmtPct(state.otherAssetsReturn),'#6c8ef0'));
     cards.appendChild(card('Age Pension (at 67)',p67?fmt(p67):'—',state.usePension?(p67?'Reduces drawdown':'Below threshold'):'Disabled',p67?'#f0b96c':'#5a6080'));
     cards.appendChild(card('Balance at 90',fmt(a90.combinedClose),state.hasPartner?nameYou()+' '+fmt(a90.robClose)+' · '+namePartner()+' '+fmt(a90.tinaClose):null,a90.combinedClose>0?'#a06cf0':'#f06c6c'));
     if(state.shock.enabled&&rowsShock){
@@ -2187,11 +2173,7 @@ function renderInner(){
       cells.push(
         isA&&r.combinedReturn!=null?fmtPctSigned(r.combinedReturn):'—',
         spendCell,
-        // Debt paydown cash (age 55-60, not invested/not spendable) shown in
-        // amber so it's visually distinct from real invested Other Income
-        // (61+, drives the pension test and offsets drawdown) in the same
-        // column, per how the two figures were asked to be told apart.
-        r.debtPaydownCash?el('span',{style:{color:'#f0b96c'}},fmt(r.debtPaydownCash)):(r.otherIncome?fmt(r.otherIncome):'—'),
+        r.otherIncome?fmt(r.otherIncome):'—',
         r.pension?fmt(r.pension):'—'
       );
       if(hasLS){
@@ -2251,18 +2233,18 @@ function renderInner(){
             // Full dataset (all rows, not just the displayed slice), raw
             // numbers rather than formatted strings, so it's usable in Excel.
             var csvHeaders=state.hasPartner
-              ?['Year','Age','PartnerAge','Phase','Stage','YouClose','PartnerClose','Combined','YouYoYReturn','PartnerYoYReturn','CombinedYoYReturn','TargetSpend','AvailableSpend','SpendShortfall','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','YouCC','PartnerCC','YouNCC','PartnerNCC','YouDiv293Tax','PartnerDiv293Tax']
-              :['Year','Age','Phase','Stage','Close','YoYReturn','TargetSpend','AvailableSpend','SpendShortfall','OtherIncome','DebtPaydownCash','Pension','ExcessMinDrawdownCash','CC','NCC','Div293Tax'];
+              ?['Year','Age','PartnerAge','Phase','Stage','YouClose','PartnerClose','Combined','YouYoYReturn','PartnerYoYReturn','CombinedYoYReturn','TargetSpend','AvailableSpend','SpendShortfall','OtherIncome','Pension','ExcessMinDrawdownCash','YouCC','PartnerCC','YouNCC','PartnerNCC','YouDiv293Tax','PartnerDiv293Tax']
+              :['Year','Age','Phase','Stage','Close','YoYReturn','TargetSpend','AvailableSpend','SpendShortfall','OtherIncome','Pension','ExcessMinDrawdownCash','CC','NCC','Div293Tax'];
             var csvRows=rows.map(function(r){
               if(state.hasPartner){
                 return [yearForAge(r.age),r.age,r.tinaAge,r.phase,r.stage||'',r.robClose,r.tinaClose,r.combinedClose,
                   r.robReturn!=null?r.robReturn:'',r.tinaReturn!=null?r.tinaReturn:'',r.combinedReturn!=null?r.combinedReturn:'',
-                  r.grossSpend||0,r.availableSpend||0,r.spendShortfall||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.tinaCC||0,
+                  r.grossSpend||0,r.availableSpend||0,r.spendShortfall||0,r.otherIncome||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.tinaCC||0,
                   r.robNCC||0,r.tinaNCC||0,r.rDiv293||0,r.tDiv293||0];
               }
               return [yearForAge(r.age),r.age,r.phase,r.stage||'',r.robClose,
                 r.robReturn!=null?r.robReturn:'',
-                r.grossSpend||0,r.availableSpend||0,r.spendShortfall||0,r.otherIncome||0,r.debtPaydownCash||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.robNCC||0,r.rDiv293||0];
+                r.grossSpend||0,r.availableSpend||0,r.spendShortfall||0,r.otherIncome||0,r.pension||0,r.excessMDCash||0,r.robCC||0,r.robNCC||0,r.rDiv293||0];
             });
             var csv=[csvHeaders].concat(csvRows).map(function(row){
               return row.map(function(v){
@@ -2290,7 +2272,7 @@ function renderInner(){
       ['Golden spend',fmt(state.spendGolden),'Gross / year'],
       ['Silver spend',fmt(state.spendSilver),'Gross / year'],
       ['Legacy spend',fmt(state.spendLegacy),'Gross / year'],
-      ['Other assets',fmt(tot),'Income '+fmt(oiFirstRow?oiFirstRow.otherIncome:0)+'/yr from age '+(state.otherIncomeStartAge+1)],
+      ['Other assets',fmt(tot),'Income '+fmt(oiFirstRow?oiFirstRow.otherIncome:0)+'/yr from age '+otherIncomeStartAge(state)],
       ['Age Pension (age 67)',p67adv?fmt(p67adv):'Below threshold','Assets & income tested'],
       ['Balance at 90',fmt(a90.combinedClose),state.hasPartner?(nameYou()+' '+fmt(a90.robClose)+' | '+namePartner()+' '+fmt(a90.tinaClose)):'—'],
       ['Fund exhaustion',exh?'Age '+exh.age:'Not projected','Horizon: age '+state.endAge]
