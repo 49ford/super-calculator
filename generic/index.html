@@ -210,9 +210,13 @@ function nccCapForAge(age,st){return ccCapForAge(age,st)*4;}
 // keeps tracking the escalating cap exactly, reproducing this tool's
 // original behaviour of contributing right up to the cap every year.
 // Either way, whatever's actually contributed can never exceed the cap.
-function contribForPerson(mode,income,extra,total,age,st){
+function contribForPerson(mode,income,extra,total,age,st,carryForwardAvailable){
   var desired=mode==='income'?idx(income,age,st)*st.sgRate+idx(extra,age,st):idx(total,age,st);
-  return Math.max(0,Math.min(desired,ccCapForAge(age,st)));
+  // carryForwardAvailable (optional) adds unused concessional cap banked
+  // from earlier years on top of this year's standard cap — see the
+  // carry-forward ledger maintained in buildTimeline().
+  var cap=ccCapForAge(age,st)+(carryForwardAvailable||0);
+  return Math.max(0,Math.min(desired,cap));
 }
 // General Transfer Balance Cap for a given projection age. $2.1m is the
 // confirmed 1 July 2026 figure; escalates in $100k steps (CPI-style
@@ -347,6 +351,23 @@ function defaultState(){
     tinaExtraContrib:0,
     robContribTotal:32500,
     tinaContribTotal:32500,
+    // Carry-forward concessional cap (since 1 July 2018): if Total Super
+    // Balance was under $500k at last 30 June, unused cap from the
+    // preceding 5 financial years can be added to this year's cap. The
+    // tool can't know your real pre-projection history, so the *Seed
+    // fields let you enter your own known unused-cap figure (from myGov)
+    // as a starting balance; the model tracks it forward automatically
+    // from there. Off by default — a fairly advanced, occasional-use case.
+    ccCarryForward:{enabled:false},
+    robCarryForwardSeed:0,
+    tinaCarryForwardSeed:0,
+    // Insurance premiums (life/TPD/income protection) paid from the
+    // balance — distinct from admin/investment fees, which should already
+    // be netted out of the work/retirement return assumptions below.
+    // Modelled only during working years, since cover is commonly
+    // cancelled at retirement; set to 0 if not applicable.
+    robInsurancePremium:0,
+    tinaInsurancePremium:0,
     // Division 293: extra 15% tax on concessional contributions when
     // (income + CC) exceeds the threshold. The $250k threshold is fixed by
     // law (unindexed since 2017). Off by default — needs each person's
@@ -508,6 +529,11 @@ function buildTimeline(st,returnOverrideFn){
     });
   }
   var rBal=st.robSeed,tBal=st.hasPartner?st.tinaSeed:0;
+  // Carry-forward concessional cap ledger: a rolling list of {age,unused}
+  // entries, each dropped once more than 5 years old. Seeded from the
+  // user's own myGov figure (if entered) so it's usable from year one.
+  var rCarryLedger=(st.robCarryForwardSeed>0)?[{age:st.startAge-1,unused:st.robCarryForwardSeed}]:[];
+  var tinaCarryLedger=(st.hasPartner&&st.tinaCarryForwardSeed>0)?[{age:st.tinaStartAge-1,unused:st.tinaCarryForwardSeed}]:[];
   // Earliest retirement expressed as a year-offset from now (NOT a raw age
   // comparison — with two different current ages, whoever has the smaller
   // "years until their retirement age" gap retires first in calendar time,
@@ -536,8 +562,33 @@ function buildTimeline(st,returnOverrideFn){
     // what makes that the case; the matching yIdx/badge adjustments below
     // keep everything else lined up with this same one-row shift.
     var rWork=age<=st.robRetireAge,tWork=st.hasPartner&&tinaAge<=st.tinaRetireAge;
-    var rCC=rWork?contribForPerson(st.contribMode,st.robIncome,st.robExtraContrib,st.robContribTotal,age,st):0;
-    var tCC=tWork?contribForPerson(st.contribMode,st.tinaIncome,st.tinaExtraContrib,st.tinaContribTotal,age,st):0;
+    // Carry-forward concessional cap: drop ledger entries older than 5
+    // years, then — only while working, under the $500k TSB threshold, and
+    // with the feature turned on — add whatever's left in the ledger to
+    // this year's standard cap before working out the actual contribution.
+    rCarryLedger=rCarryLedger.filter(function(e){return age-e.age<5;});
+    tinaCarryLedger=tinaCarryLedger.filter(function(e){return tinaAge-e.age<5;});
+    var ccfOn=st.ccCarryForward&&st.ccCarryForward.enabled;
+    var rCarryAvail=(ccfOn&&rWork&&rBal<500000)?rCarryLedger.reduce(function(s,e){return s+e.unused;},0):0;
+    var tinaCarryAvail=(ccfOn&&st.hasPartner&&tWork&&tBal<500000)?tinaCarryLedger.reduce(function(s,e){return s+e.unused;},0):0;
+    var rCapBase=ccCapForAge(age,st),tinaCapBase=ccCapForAge(age,st);
+    var rCC=rWork?contribForPerson(st.contribMode,st.robIncome,st.robExtraContrib,st.robContribTotal,age,st,rCarryAvail):0;
+    var tCC=tWork?contribForPerson(st.contribMode,st.tinaIncome,st.tinaExtraContrib,st.tinaContribTotal,age,st,tinaCarryAvail):0;
+    // Consume the ledger oldest-first if this year's contribution dipped
+    // into carry-forward, then bank whatever's left unused from THIS
+    // year's own standard cap for future years.
+    if(rCC>rCapBase){
+      var rUsed=rCC-rCapBase;
+      for(var rli=0;rli<rCarryLedger.length&&rUsed>0;rli++){var rTake=Math.min(rCarryLedger[rli].unused,rUsed);rCarryLedger[rli].unused-=rTake;rUsed-=rTake;}
+      rCarryLedger=rCarryLedger.filter(function(e){return e.unused>0.01;});
+    }
+    if(st.hasPartner&&tCC>tinaCapBase){
+      var tUsed=tCC-tinaCapBase;
+      for(var tli=0;tli<tinaCarryLedger.length&&tUsed>0;tli++){var tTake=Math.min(tinaCarryLedger[tli].unused,tUsed);tinaCarryLedger[tli].unused-=tTake;tUsed-=tTake;}
+      tinaCarryLedger=tinaCarryLedger.filter(function(e){return e.unused>0.01;});
+    }
+    if(rWork)rCarryLedger.push({age:age,unused:Math.max(0,rCapBase-Math.min(rCC,rCapBase))});
+    if(st.hasPartner&&tWork)tinaCarryLedger.push({age:tinaAge,unused:Math.max(0,tinaCapBase-Math.min(tCC,tinaCapBase))});
     // Division 293: extra 15% tax on concessional contributions when
     // (income + CC) exceeds the (unindexed) threshold. Applied on top of the
     // normal 15% contributions tax, so total tax on the excess is 30%.
@@ -548,9 +599,12 @@ function buildTimeline(st,returnOverrideFn){
       var tSurchargeIncome=(st.div293.tinaIncome||0)+tCC;
       tDiv293=Math.min(tCC,Math.max(0,tSurchargeIncome-st.div293.threshold))*0.15;
     }
-    // Accumulation returns
-    if(rWork){var nr=rCC*(1-st.contribTax)-rDiv293,br=rBal+nr;rBal=br+br*st.robWorkReturn;}
-    if(tWork){var nt=tCC*(1-st.contribTax)-tDiv293,bt=tBal+nt;tBal=bt+bt*st.tinaWorkReturn;}
+    // Accumulation returns. Insurance premiums (life/TPD/income protection)
+    // are deducted here too, while working only — separate from admin/
+    // investment fees, which are assumed already netted out of the work
+    // return itself (see the note next to those sliders).
+    if(rWork){var nr=rCC*(1-st.contribTax)-rDiv293-(st.robInsurancePremium||0),br=Math.max(0,rBal+nr);rBal=br+br*st.robWorkReturn;}
+    if(tWork){var nt=tCC*(1-st.contribTax)-tDiv293-(st.tinaInsurancePremium||0),bt=Math.max(0,tBal+nt);tBal=bt+bt*st.tinaWorkReturn;}
     if(!st.hasPartner)tBal=0;
     // Non-concessional contributions (no tax, any phase) — window is each
     // person's own age, since "contribute from 55 to 60" naturally means
@@ -1710,6 +1764,11 @@ function renderInner(){
     if(state.showInflationAdj)d.appendChild(sld('CPI rate',1,8,0.1,state.inflationRate*100,fmtPct(state.inflationRate),function(v){state.inflationRate=v/100;render();}));
     d.appendChild(tog(state.pensionBoost.enabled?'Pension phase boost: +'+fmtPct(state.pensionBoost.rate)+' (tax saving ON)':'Pension phase boost: OFF',state.pensionBoost.enabled,function(){state.pensionBoost.enabled=!state.pensionBoost.enabled;render();}));
     if(state.pensionBoost.enabled)d.appendChild(sld('Boost rate (≈ tax saving)',0.3,3,0.1,state.pensionBoost.rate*100,(state.pensionBoost.rate*100).toFixed(1)+'%',function(v){state.pensionBoost.rate=v/100;render();}));
+    d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',margin:'10px 0 4px'}},'Insurance premiums'));
+    d.appendChild(numI(nameYou()+' premiums ($/yr, while working)',state.robInsurancePremium,function(v){state.robInsurancePremium=v;render();},{step:100,min:0}));
+    if(state.hasPartner)d.appendChild(numI(namePartner()+' premiums ($/yr, while working)',state.tinaInsurancePremium,function(v){state.tinaInsurancePremium=v;render();},{step:100,min:0}));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
+      'Life/TPD/income-protection premiums paid from the balance — separate from admin/investment fees, which should already be netted out of the return assumptions above. Modelled only during working years; set to $0 once cover is cancelled (commonly done at retirement).'));
     return d;
   }));
 
@@ -1985,6 +2044,16 @@ function renderInner(){
       d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
         'Flat $ figure, capped at the legislated cap above. Left at the cap\'s default value, this reproduces contributing right up to the cap every year.'));
     }
+    d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',margin:'10px 0 4px'}},'Carry-forward concessional cap'));
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},
+      'If Total Super Balance was under $500,000 at last 30 June, unused concessional cap from the preceding 5 financial years can be added to this year\'s cap. This tool can\'t see your real history before the projection starts, so enter your own unused-cap figure from myGov below if you want to use it — the model tracks it forward automatically from there.'));
+    d.appendChild(tog(state.ccCarryForward.enabled?'Carry-forward: ON':'Carry-forward: OFF',state.ccCarryForward.enabled,function(){state.ccCarryForward.enabled=!state.ccCarryForward.enabled;render();}));
+    if(state.ccCarryForward.enabled){
+      d.appendChild(numI(nameYou()+' unused cap carried in ($, from myGov)',state.robCarryForwardSeed,function(v){state.robCarryForwardSeed=v;render();},{step:1000,min:0}));
+      if(state.hasPartner)d.appendChild(numI(namePartner()+' unused cap carried in ($, from myGov)',state.tinaCarryForwardSeed,function(v){state.tinaCarryForwardSeed=v;render();},{step:1000,min:0}));
+      d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
+        'Only usable while working and under the $500k threshold, and expires roughly 5 years after being banked — oldest amounts are used first.'));
+    }
     d.appendChild(sld('Contributions tax',0,0.30,0.01,state.contribTax,fmtPct(state.contribTax),function(v){state.contribTax=v;render();}));
     d.appendChild(tog(state.indexation.enabled?'Auto-escalate caps/thresholds/spend (CPI) ★':'Auto-escalate: OFF (figures frozen at today\'s law)',
       state.indexation.enabled,function(){state.indexation.enabled=!state.indexation.enabled;render();}));
@@ -2028,11 +2097,29 @@ function renderInner(){
   if(state.tab==='super'){
     // Key cards — pension card now uses age-67 row
     var p67=a67?a67.pension:0;
+    // Headline — the one number most people actually want first: does the
+    // money last, and if not, by how much. Sits above the smaller cards
+    // rather than being just one equally-sized card among several.
+    var neverRuns=!exh;
+    var shortfallYears=neverRuns?0:(state.endAge-exh.age);
+    var headline=el('div',{style:{
+      padding:'16px 20px',borderRadius:'14px',marginBottom:'14px',
+      background:neverRuns?'rgba(93,216,122,.10)':'rgba(240,108,108,.10)',
+      border:'1px solid '+(neverRuns?'rgba(93,216,122,.35)':'rgba(240,108,108,.35)')
+    }},[
+      el('div',{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'1px',textTransform:'uppercase',color:neverRuns?'#5dd87a':'#f06c6c',marginBottom:'4px'}},
+        neverRuns?'On track':'Runs short'),
+      el('div',{style:{fontSize:'22px',fontWeight:'900',color:'#e8eaf0'}},
+        neverRuns?('Your money lasts to age '+state.endAge+' — your full horizon'):('Your money runs out at age '+exh.age)),
+      el('div',{style:{fontSize:'12px',color:'#7a8099',marginTop:'4px',lineHeight:'1.4'}},
+        neverRuns?('Combined balance of '+fmt(a90.combinedClose)+' left at age 90.')
+          :(shortfallYears+' year'+(shortfallYears===1?'':'s')+' short of your age-'+state.endAge+' horizon — after that, spend falls back to whatever pension and other income is available (see the flagged rows in the Timeline table below).'))
+    ]);
+    rightCol.appendChild(headline);
     var cards=el('div',{class:'cards-grid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:'12px'}});
     cards.appendChild(card(state.hasPartner?'Combined at retirement':'Balance at retirement',fmt(aRet.combinedClose),state.hasPartner?'Age '+er+' · '+nameYou()+' '+fmt(aRet.robClose):'Age '+er,'#5dd87a'));
     cards.appendChild(card('Other income @ '+(state.otherIncomeStartAge+1),fmt(oiFirstRow?oiFirstRow.otherIncome:0),fmt(tot)+' × '+fmtPct(state.otherAssetsReturn),'#6c8ef0'));
     cards.appendChild(card('Age Pension (at 67)',p67?fmt(p67):'—',state.usePension?(p67?'Reduces drawdown':'Below threshold'):'Disabled',p67?'#f0b96c':'#5a6080'));
-    cards.appendChild(card(exh?'Exhausted at age':'Still running at',exh?String(exh.age):String(state.endAge),exh?'Household runs out':'Horizon intact',exh?'#f06c6c':'#5dd87a'));
     cards.appendChild(card('Balance at 90',fmt(a90.combinedClose),state.hasPartner?nameYou()+' '+fmt(a90.robClose)+' · '+namePartner()+' '+fmt(a90.tinaClose):null,a90.combinedClose>0?'#a06cf0':'#f06c6c'));
     if(state.shock.enabled&&rowsShock){
       var baseEnd=rows[rows.length-1];var shkEnd=rowsShock[rowsShock.length-1];
