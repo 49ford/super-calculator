@@ -409,7 +409,7 @@ function defaultState(){
     // core setup everyone needs, not an occasional-use feature. Collapsed by
     // default it looks like the control has vanished rather than just being
     // tucked away.
-    collapsed:{starting:false,returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:false,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true}
+    collapsed:{starting:false,contrib:false,returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true}
   };
 }
 
@@ -1759,6 +1759,54 @@ function renderInner(){
     }
     return d;
   }));
+
+  ctrl.appendChild(collSec('contrib','Concessional Contributions',function(){
+    var d=el('div',{});
+    d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'8px',lineHeight:'1.5'}},
+      'What actually goes into super each year before tax — employer Super Guarantee plus any extra salary-sacrifice. This drives the whole projection, so it\'s worth getting right.'));
+    d.appendChild(tog(state.contribMode==='income'?'Estimate: Income × SG% + extra':'Estimate: Flat total $ amount',
+      state.contribMode==='income',function(){state.contribMode=state.contribMode==='income'?'total':'income';render();}));
+    var capNow=state.caps.after54;
+    function personBlock(label,color,income,extra,onIncome,onExtra){
+      d.appendChild(numI(label+' income ($/yr)',income,onIncome,{step:5000,min:0}));
+      var sg=income*state.sgRate;
+      d.appendChild(el('div',{style:{fontSize:'11px',color:color,marginTop:'-4px',marginBottom:'6px'}},
+        'Employer SG ('+fmtPct(state.sgRate)+'): '+fmt(sg)+'/yr'));
+      d.appendChild(numI(label+' extra/salary-sacrifice ($/yr)',extra,onExtra,{step:1000,min:0}));
+      var desired=sg+extra,actual=Math.min(desired,capNow);
+      d.appendChild(el('div',{style:{fontSize:'13px',fontWeight:'800',color:actual<desired?'#f0b96c':'#5dd87a',marginTop:'-2px',marginBottom:'10px'}},
+        label+' total: '+fmt(actual)+'/yr'+(actual<desired?' (capped at '+fmt(capNow)+' — '+fmt(desired)+' requested)':'')));
+      return actual;
+    }
+    function personBlockFlat(label,color,total,onTotal){
+      var actual=Math.min(total,capNow);
+      d.appendChild(numI(label+' concessional contribution ($/yr)',total,onTotal,{step:500,min:0}));
+      d.appendChild(el('div',{style:{fontSize:'13px',fontWeight:'800',color:actual<total?'#f0b96c':'#5dd87a',marginTop:'-2px',marginBottom:'10px'}},
+        label+' total: '+fmt(actual)+'/yr'+(actual<total?' (capped at '+fmt(capNow)+')':'')));
+      return actual;
+    }
+    var robActual,tinaActual=0;
+    if(state.contribMode==='income'){
+      d.appendChild(sld('Super Guarantee rate',9,15,0.1,state.sgRate*100,fmtPct(state.sgRate),function(v){state.sgRate=v/100;render();}));
+      robActual=personBlock(nameYou(),'#6c8ef0',state.robIncome,state.robExtraContrib,
+        function(v){state.robIncome=v;render();},function(v){state.robExtraContrib=v;render();});
+      if(state.hasPartner){
+        tinaActual=personBlock(namePartner(),'#a06cf0',state.tinaIncome,state.tinaExtraContrib,
+          function(v){state.tinaIncome=v;render();},function(v){state.tinaExtraContrib=v;render();});
+      }
+    } else {
+      robActual=personBlockFlat(nameYou(),'#6c8ef0',state.robContribTotal,function(v){state.robContribTotal=v;render();});
+      if(state.hasPartner)tinaActual=personBlockFlat(namePartner(),'#a06cf0',state.tinaContribTotal,function(v){state.tinaContribTotal=v;render();});
+    }
+    if(state.hasPartner){
+      d.appendChild(el('div',{style:{fontSize:'14px',fontWeight:'900',color:'#e8eaf0',padding:'8px 10px',background:'#0a0c12',borderRadius:'8px'}},
+        'Combined: '+fmt(robActual+tinaActual)+'/yr'));
+    }
+    d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'8px',lineHeight:'1.4'}},
+      'Capped at this year\'s legislated concessional cap ('+fmt(capNow)+'/yr per person). The cap itself, carry-forward, contributions tax and CPI auto-escalation are further down under "Concessional Cap Settings".'));
+    return d;
+  }));
+
   ctrl.appendChild(collSec('returns','Returns',function(){
     var d=el('div',{});
     d.appendChild(sld(nameYou()+' work return',3,15,0.05,state.robWorkReturn*100,fmtPct(state.robWorkReturn),function(v){state.robWorkReturn=v/100;render();}));
@@ -2012,30 +2060,11 @@ function renderInner(){
     return d;
   }));
 
-  ctrl.appendChild(collSec('advanced','Concessional Contributions & Caps',function(){
+  ctrl.appendChild(collSec('advanced','Concessional Cap Settings',function(){
     var d=el('div',{});
     d.appendChild(numI('Concessional cap ($, FY26-27)',state.caps.after54,function(v){state.caps.after54=v;render();},{step:500,min:0}));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},
-      'This is the legislated ceiling — the most that can be contributed concessionally per person per year. It\'s not necessarily what you actually contribute; set that below.'));
-    d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',margin:'8px 0 4px'}},'Actual contribution amount'));
-    d.appendChild(tog(state.contribMode==='income'?'Estimate: Income × SG% + extra':'Estimate: Total $ amount',
-      state.contribMode==='income',function(){state.contribMode=state.contribMode==='income'?'total':'income';render();}));
-    if(state.contribMode==='income'){
-      d.appendChild(sld('Super Guarantee rate',9,15,0.1,state.sgRate*100,fmtPct(state.sgRate),function(v){state.sgRate=v/100;render();}));
-      d.appendChild(numI(nameYou()+' income ($/yr)',state.robIncome,function(v){state.robIncome=v;render();},{step:5000,min:0}));
-      d.appendChild(numI(nameYou()+' extra/salary-sacrifice ($/yr)',state.robExtraContrib,function(v){state.robExtraContrib=v;render();},{step:1000,min:0}));
-      if(state.hasPartner){
-        d.appendChild(numI(namePartner()+' income ($/yr)',state.tinaIncome,function(v){state.tinaIncome=v;render();},{step:5000,min:0}));
-        d.appendChild(numI(namePartner()+' extra/salary-sacrifice ($/yr)',state.tinaExtraContrib,function(v){state.tinaExtraContrib=v;render();},{step:1000,min:0}));
-      }
-      d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
-        'Contribution = income × SG rate + extra, capped at the legislated cap above. SG rate is editable in case it changes — check the current legislated rate if unsure.'));
-    } else {
-      d.appendChild(numI(nameYou()+' concessional contribution ($/yr)',state.robContribTotal,function(v){state.robContribTotal=v;render();},{step:500,min:0}));
-      if(state.hasPartner)d.appendChild(numI(namePartner()+' concessional contribution ($/yr)',state.tinaContribTotal,function(v){state.tinaContribTotal=v;render();},{step:500,min:0}));
-      d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
-        'Flat $ figure, capped at the legislated cap above. Left at the cap\'s default value, this reproduces contributing right up to the cap every year.'));
-    }
+      'This is the legislated ceiling — the most that can be contributed concessionally per person per year. Your actual contribution (income/extra or flat total) is set under "Concessional Contributions" further up.'));
     d.appendChild(el('div',{style:{fontSize:'12px',color:'#c0c5d8',fontWeight:'700',margin:'10px 0 4px'}},'Carry-forward concessional cap'));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},
       'If Total Super Balance was under $500,000 at last 30 June, unused concessional cap from the preceding 5 financial years can be added to this year\'s cap. This tool can\'t see your real history before the projection starts, so enter your own unused-cap figure from myGov below if you want to use it — the model tracks it forward automatically from there.'));
