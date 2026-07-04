@@ -403,7 +403,13 @@ function defaultState(){
     // Column axis is always retirement-return delta.
     sensitivityAxis:'spend',
     netWorth:{homeValue:0,homeCpi:0.04},
-    collapsed:{starting:false,returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:true,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true}
+    // "advanced" (Concessional Contributions & Caps) defaults OPEN, unlike
+    // the other advanced/niche sections below — it holds the actual
+    // contribution amount (income x SG% + extra, or a flat total), which is
+    // core setup everyone needs, not an occasional-use feature. Collapsed by
+    // default it looks like the control has vanished rather than just being
+    // tucked away.
+    collapsed:{starting:false,returns:false,retirement:false,spending:false,assets:false,pension:true,advanced:false,lumpsums:false,shock:false,ncc:true,parttime:true,montecarlo:true,goal:true,div293:true,tbc:true}
   };
 }
 
@@ -2006,7 +2012,7 @@ function renderInner(){
     return d;
   }));
 
-  ctrl.appendChild(collSec('advanced','Concessional Caps',function(){
+  ctrl.appendChild(collSec('advanced','Concessional Contributions & Caps',function(){
     var d=el('div',{});
     d.appendChild(numI('Concessional cap ($, FY26-27)',state.caps.after54,function(v){state.caps.after54=v;render();},{step:500,min:0}));
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',margin:'-2px 0 8px',lineHeight:'1.4'}},
