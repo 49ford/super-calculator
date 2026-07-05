@@ -28,11 +28,17 @@ input[type=number]:focus,input[type=text]:focus{border-color:#6c8ef0}
 input[type=checkbox]{accent-color:#6c8ef0;width:14px;height:14px;cursor:pointer}
 select{background:#1e2233;border:1px solid #2a3050;border-radius:6px;color:#e8eaf0;padding:5px 8px;font-size:12px;outline:none;cursor:pointer}
 button{font-family:'DM Sans','Segoe UI',sans-serif}
-.section-toggle{width:100%;background:none;border:none;color:#c0c5d8;font-size:12px;font-weight:900;padding:8px 0;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #252a3a;margin-bottom:8px}
+.section-toggle{width:100%;background:none;border:none;color:#c0c5d8;font-size:13px;font-weight:900;padding:9px 0;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #252a3a;margin-bottom:8px}
 .section-toggle:hover{color:#6c8ef0}
 .section-toggle .arrow{font-size:10px;transition:transform .2s;color:#5a6080}
 .section-toggle.open .arrow{transform:rotate(180deg)}
+.section-toggle.muted{font-size:11.5px;font-weight:700;color:#8288a3}
+.section-toggle.muted:hover{color:#6c8ef0}
+.section-toggle.accent{color:#5dd87a;border-bottom:1px solid #24513a;padding-left:9px;border-left:3px solid #5dd87a;background:rgba(93,216,122,.05)}
+.section-toggle.accent:hover{color:#7ee897}
 .section-body{overflow:hidden;transition:max-height .3s ease}
+.quick-nav{position:sticky;top:0;z-index:5;display:flex;gap:6px;flex-wrap:wrap;padding:2px 0 12px;margin-bottom:6px;background:#161923;border-bottom:1px solid #252a3a}
+.quick-nav button:hover{border-color:#6c8ef0;color:#6c8ef0}
 #chart-tooltip{position:fixed;background:#1a1d27;border:1px solid #3a3f55;border-radius:8px;padding:10px 14px;font-size:12px;color:#e8eaf0;pointer-events:none;z-index:999;display:none;min-width:190px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
 .ls-item{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:#0f1117;border:1px solid #252a3a;border-radius:6px;margin-bottom:4px;font-size:11px;color:#c0c5d8}
 .ls-item .ls-del{background:none;border:none;color:#5a6080;cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
@@ -953,18 +959,33 @@ function panel(title,content){
     el('div',{style:{fontSize:'12px',color:'#7a8099',fontWeight:'900',marginBottom:'10px'}},title),
     content]);
 }
-function collSec(key,title,fn){
+function collSec(key,title,fn,opts){
+  opts=opts||{};
   var open=!state.collapsed[key];
-  var btn=el('button',{class:'section-toggle'+(open?' open':''),onClick:function(){
+  var cls='section-toggle'+(open?' open':'')+(opts.accent?' accent':'')+(opts.muted?' muted':'');
+  var label=(opts.icon?opts.icon+' ':'')+title;
+  var btn=el('button',{class:cls,onClick:function(){
     state.collapsed[key]=!state.collapsed[key];saveState();
     var body=btn.nextSibling,arrow=btn.querySelector('.arrow');
     body.style.maxHeight=state.collapsed[key]?'0':body.scrollHeight+'px';
     arrow.style.transform=state.collapsed[key]?'rotate(0deg)':'rotate(180deg)';
-  }},[title,el('span',{class:'arrow'},'▼')]);
+  }},[label,el('span',{class:'arrow'},'▼')]);
   var body=el('div',{class:'section-body',style:{maxHeight:open?'2000px':'0'}});
   body.appendChild(fn());
-  var w=el('div',{style:{marginBottom:'10px'}});w.appendChild(btn);w.appendChild(body);
+  var w=el('div',{id:'sec-'+key,style:{marginBottom:'10px'}});w.appendChild(btn);w.appendChild(body);
   return w;
+}
+function groupDivider(label,anchorId){
+  return el('div',{id:anchorId,style:{fontSize:'10px',fontWeight:'900',letterSpacing:'.08em',
+    color:'#5a6080',textTransform:'uppercase',margin:'20px 0 6px',paddingTop:'2px'}},label);
+}
+function navPill(label,targetId){
+  return el('button',{style:{padding:'6px 11px',borderRadius:'20px',border:'1px solid #2a3050',
+    background:'#1a1d2b',color:'#9aa0c0',cursor:'pointer',fontWeight:'800',fontSize:'11px',whiteSpace:'nowrap'},
+    onClick:function(){
+      var t=document.getElementById(targetId);
+      if(t&&typeof t.scrollIntoView==='function')t.scrollIntoView({behavior:'smooth',block:'start'});
+    }},label);
 }
 function tog(label,on,fn){
   return el('button',{'aria-pressed':String(!!on),style:{padding:'7px 10px',borderRadius:'10px',border:'1px solid #252a3a',
@@ -1740,6 +1761,13 @@ function renderInner(){
     background:state.shock.enabled?'rgba(240,108,108,.1)':'transparent',color:shockOnCol,
     cursor:'pointer',fontWeight:'900',width:'100%',textAlign:'left',marginBottom:'6px'},onClick:function(){state.shock.enabled=!state.shock.enabled;render();}},shockLabel));
 
+  ctrl.appendChild(el('div',{class:'quick-nav'},[
+    navPill('📍 Your Plan','grp-plan'),
+    navPill('🏠 Assets & Events','grp-assets'),
+    navPill('⚙ Advanced Settings','grp-advanced')
+  ]));
+
+  ctrl.appendChild(groupDivider('Your Plan','grp-plan'));
   ctrl.appendChild(collSec('starting','Starting Point',function(){
     var d=el('div',{});
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'8px',lineHeight:'1.5'}},'This is a blank template — nothing below is pre-filled with anyone\'s real data. Enter your own numbers, in today\'s dollars.'));
@@ -1758,14 +1786,19 @@ function renderInner(){
       d.appendChild(numI(possPartner()+' current super balance ($)',state.tinaSeed,function(v){state.tinaSeed=v;render();},{step:5000,min:0}));
     }
     return d;
-  }));
+  },{icon:'📍'}));
 
   ctrl.appendChild(collSec('contrib','Concessional Contributions',function(){
     var d=el('div',{});
     d.appendChild(el('div',{style:{fontSize:'11px',color:'#5a6080',marginBottom:'8px',lineHeight:'1.5'}},
       'What actually goes into super each year before tax — employer Super Guarantee plus any extra salary-sacrifice. This drives the whole projection, so it\'s worth getting right.'));
-    d.appendChild(tog(state.contribMode==='income'?'Estimate: Income × SG% + extra':'Estimate: Flat total $ amount',
-      state.contribMode==='income',function(){state.contribMode=state.contribMode==='income'?'total':'income';render();}));
+    (function(){
+      var b1=segBtn('Income × SG% + extra',state.contribMode==='income',function(){state.contribMode='income';render();});
+      var b2=segBtn('Flat total $ amount',state.contribMode==='total',function(){state.contribMode='total';render();});
+      b1.style.flex='1';b1.style.textAlign='center';b1.style.padding='7px 4px';
+      b2.style.flex='1';b2.style.textAlign='center';b2.style.padding='7px 4px';
+      d.appendChild(el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},[b1,b2]));
+    })();
     var capNow=state.caps.after54;
     function personBlock(label,color,income,extra,onIncome,onExtra){
       d.appendChild(numI(label+' income ($/yr)',income,onIncome,{step:5000,min:0}));
@@ -1805,7 +1838,7 @@ function renderInner(){
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'8px',lineHeight:'1.4'}},
       'Capped at this year\'s legislated concessional cap ('+fmt(capNow)+'/yr per person). The cap itself, carry-forward, contributions tax and CPI auto-escalation are further down under "Concessional Cap Settings".'));
     return d;
-  }));
+  },{icon:'💰',accent:true}));
 
   ctrl.appendChild(collSec('returns','Returns',function(){
     var d=el('div',{});
@@ -1822,7 +1855,7 @@ function renderInner(){
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'-2px',lineHeight:'1.4'}},
       'Life/TPD/income-protection premiums paid from the balance — separate from admin/investment fees, which should already be netted out of the return assumptions above. Modelled only during working years; set to $0 once cover is cancelled (commonly done at retirement).'));
     return d;
-  }));
+  },{icon:'📈'}));
 
   ctrl.appendChild(collSec('retirement','Retirement Ages',function(){
     var d=el('div',{});
@@ -1834,7 +1867,7 @@ function renderInner(){
     }
     d.appendChild(sld('Horizon (end age)',70,100,1,state.endAge,String(state.endAge),function(v){state.endAge=Math.max(v,state.startAge+1);render();}));
     return d;
-  }));
+  },{icon:'🏁'}));
 
   ctrl.appendChild(collSec('spending','Spending (Phased)',function(){
     var d=el('div',{});
@@ -1882,8 +1915,9 @@ function renderInner(){
         'Only applies once you\'re both retired and both drawing on your own super — drag toward '+nameYou()+' or '+namePartner()+' to lean the split their way. Before that, whoever\'s retired funds the spend alone.'));
     }
     return d;
-  }));
+  },{icon:'🛍️'}));
 
+  ctrl.appendChild(groupDivider('Assets & Events','grp-assets'));
   ctrl.appendChild(collSec('assets','Other Assets & Property',function(){
     var d=el('div',{});
     // ── Investment / other assets: pension-assessable, income-generating ──
@@ -1927,9 +1961,9 @@ function renderInner(){
       d.appendChild(sld('Home CPI growth',0,10,0.1,state.netWorth.homeCpi*100,(state.netWorth.homeCpi*100).toFixed(1)+'%',function(v){state.netWorth.homeCpi=v/100;render();}));
     }
     return d;
-  }));
+  },{icon:'🏠'}));
 
-  ctrl.appendChild(collSec('lumpsums','Lump Sum Events'+(state.lumpSums.length>0?' ('+state.lumpSums.length+')':''),lumpSumEditor));
+  ctrl.appendChild(collSec('lumpsums','Lump Sum Events'+(state.lumpSums.length>0?' ('+state.lumpSums.length+')':''),lumpSumEditor,{icon:'💸'}));
 
   ctrl.appendChild(collSec('shock','Market Shock (Seq. of Returns)',function(){
     var d=el('div',{});
@@ -1957,7 +1991,9 @@ function renderInner(){
       }
     }
     return d;
-  }));
+  },{icon:'⚡'}));
+
+  ctrl.appendChild(groupDivider('Advanced Settings','grp-advanced'));
   ctrl.appendChild(collSec('ncc','Non-Concessional Contributions',function(){
     var d=el('div',{});
     var nccCapNow=nccCapForAge(Math.max(state.startAge,state.ncc.startAge),state);
@@ -1994,7 +2030,7 @@ function renderInner(){
       }
     }
     return d;
-  }));
+  },{icon:'➕',muted:true}));
 
   ctrl.appendChild(collSec('parttime','Part-time / Phased Retirement',function(){
     var d=el('div',{});
@@ -2007,7 +2043,7 @@ function renderInner(){
       d.appendChild(sld(namePartner()+' ends at age',55,75,1,state.partTime.tinaEndAge,String(state.partTime.tinaEndAge),function(v){state.partTime.tinaEndAge=v;render();}));
     }
     return d;
-  }));
+  },{icon:'⏳',muted:true}));
 
   ctrl.appendChild(collSec('montecarlo','Monte Carlo Settings',function(){
     var d=el('div',{});
@@ -2025,7 +2061,7 @@ function renderInner(){
       ]));
     }
     return d;
-  }));
+  },{icon:'🎲',muted:true}));
 
   ctrl.appendChild(collSec('goal','Goal: Max Sustainable Spend',function(){
     var d=el('div',{});
@@ -2043,7 +2079,7 @@ function renderInner(){
       ]));
     }
     return d;
-  }));
+  },{icon:'🎯',muted:true}));
 
   ctrl.appendChild(collSec('pension','Age Pension',function(){
     var d=el('div',{});
@@ -2058,7 +2094,7 @@ function renderInner(){
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'3px'}},'4% at 60–64 · 5% at 65–74 · 6% at 75–79 · 7% at 80–84 · 9% at 85–89 · 11% at 90–94 · 14% at 95+'));
     d.appendChild(sld('Min drawdown starts at age',60,70,1,state.minDrawdown.startAge,'Age '+state.minDrawdown.startAge,function(v){state.minDrawdown.startAge=v;render();}));
     return d;
-  }));
+  },{icon:'🏛️',muted:true}));
 
   ctrl.appendChild(collSec('advanced','Concessional Cap Settings',function(){
     var d=el('div',{});
@@ -2082,7 +2118,7 @@ function renderInner(){
     d.appendChild(el('div',{style:{fontSize:'10px',color:'#5a6080',marginTop:'4px',lineHeight:'1.5'}},
       'When ON, concessional/NCC caps, the Transfer Balance Cap, and Age Pension thresholds grow each projection year at this rate, and your Golden/Silver/Legacy spend and actual concessional contributions (entered in today\'s dollars) are grown to nominal terms the same way. The Division 293 threshold stays fixed — it is not indexed by law.'));
     return d;
-  }));
+  },{icon:'🧮',muted:true}));
 
   ctrl.appendChild(collSec('div293','Division 293 Tax',function(){
     var d=el('div',{});
@@ -2093,7 +2129,7 @@ function renderInner(){
     if(state.hasPartner)d.appendChild(numI(namePartner()+' taxable income ($)',state.div293.tinaIncome,function(v){state.div293.tinaIncome=v;render();},{step:5000,min:0}));
     d.appendChild(numI('Threshold ($, not indexed by law)',state.div293.threshold,function(v){state.div293.threshold=v;render();},{step:5000,min:0}));
     return d;
-  }));
+  },{icon:'📊',muted:true}));
 
   ctrl.appendChild(collSec('tbc','Transfer Balance Cap',function(){
     var d=el('div',{});
@@ -2110,7 +2146,7 @@ function renderInner(){
       }
     }
     return d;
-  }));
+  },{icon:'🔒',muted:true}));
 
   leftCol.appendChild(panel('Controls',ctrl));
 
