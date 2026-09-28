@@ -1024,26 +1024,62 @@ function getMonteCarloRowsDebounced(){
 // ─── Goal solver (binary search) ──────────────────────────────────────────
 function solveMaxSpend(targetBalance){
   var lo=0,hi=2000000;
-  for(var i=0;i<60;i++){
-    var mid=(lo+hi)/2;
-    var ratio=mid/Math.max(1,state.spendGolden);
-    var st2=Object.assign({},state,{spendGolden:mid,spendSilver:state.spendSilver*ratio,spendLegacy:state.spendLegacy*ratio});
-    var fRows=buildTimeline(st2).filter(function(r){return r.phase==='FORECAST';});
-    var last=fRows[fRows.length-1];
-    // Bug fix: checking only the final row's balance isn't enough. Once a
-    // balance hits 0 it stays floored there (see buildDrawdown/buildTimeline),
-    // so a spend level that exhausts funds at, say, age 70 looks identical —
-    // at age 90 — to a spend level that lasts exactly to age 90 with nothing
-    // left. Both satisfied "final balance >= targetBalance" whenever
-    // targetBalance was 0, which let the binary search climb all the way to
-    // its $2,000,000 upper bound and report that as "sustainable." Now we
-    // also require that funds were never exhausted before the final
-    // projection year.
-    var exhaustedEarly=fRows.some(function(r,idx){return idx<fRows.length-1&&r.combinedClose<=0;});
-    var ok=!exhaustedEarly&&last&&last.combinedClose>=targetBalance;
-    if(ok)lo=mid;else hi=mid;
+  for (var i = 0; i < 60; i++) {
+  var mid = (lo + hi) / 2;
+  var ratio = mid / Math.max(1, state.spendGolden);
+
+  var st2 = Object.assign({}, state, {
+    spendGolden: mid,
+    spendSilver: state.spendSilver * ratio,
+    spendLegacy: state.spendLegacy * ratio
+  });
+
+  var fRows = buildTimeline(st2).filter(function (r) {
+    return r.phase === 'FORECAST';
+  });
+
+  var last = fRows[fRows.length - 1];
+
+  /*
+   * A spending level is sustainable only when:
+   *
+   * 1. Every forecast year's Golden/Silver/Legacy target is fully funded.
+   * 2. The required balance remains at the projection horizon.
+   *
+   * Do not test sustainability using combinedClose alone. Balances are
+   * floored at zero, so early exhaustion and exact horizon exhaustion can
+   * otherwise look identical in the final row.
+   *
+   * Also, reaching zero before the horizon is not automatically a failure
+   * if pension and other income continue to fully fund the spending target.
+   * spendShortfall is the authoritative affordability test used by the
+   * timeline's red-spend warning.
+   */
+  var hasSpendShortfall = fRows.*ome(function (r) {
+    return Numb*r(r.spendShortfall || 0) > 1;
+  });
+
+  var meetsTargetBalance =
+    !!last &&
+    Number(last.combinedClose || 0) + 0.01 >= Number(targetBalance || 0);
+
+  var ok =
+    !hasSpendShortfall &&
+    meetsTargetBalance;
+
+  if (ok) {
+    lo = mid;
+  } else {
+    hi = mid;
   }
-  return Math.round(lo/1000)*1000;
+}
+
+/*
+ * Round down rather than to the nearest $1,000. Rounding to the nearest
+ * thousand can report an amount slightly above the maximum amount that
+ * actually passed the sustainability test.
+ */
+return Math.floor(lo / 1000) * 1000;
 }
 // Same debounce treatment as Monte Carlo: 60 binary-search iterations, each a
 // full buildTimeline(), on every slider input event was the other source of
