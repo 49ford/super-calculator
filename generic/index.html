@@ -722,10 +722,44 @@ function buildTimeline(st,returnOverrideFn){
     // distinguish those sub-types, so as a simplification: contributions
     // (using whichever mode/figures are set) continue automatically up to
     // age 67 regardless of retirement status, then stop entirely at 67.
-    var rCanContribute=rWork||age<67,tCanContribute=tWork||tinaAge<67;
-    if(rCanContribute){var nr=rCC*(1-st.contribTax)-rDiv293-(st.robInsurancePremium||0),br=Math.max(0,rBal+nr);rBal=br+br*(rWork?st.robWorkReturn:st.retireReturn);}
-    if(tCanContribute){var nt=tCC*(1-st.contribTax)-tDiv293-(st.tinaInsurancePremium||0),bt=Math.max(0,tBal+nt);tBal=bt+bt*(tWork?st.tinaWorkReturn:st.retireReturn);}
-    if(!st.hasPartner)tBal=0;
+    var rCanContribute = rWork || age < 67;
+var tCanContribute = tWork || tinaAge < 67;
+
+/*
+ * Add permitted concessional contributions here, but apply investment
+ * returns only while working. Once retired, the dedicated retirement-return
+ * section below applies the return exactly once, including pension boost
+ * and Transfer Balance Cap treatment.
+ */
+if (rCanContribute) {
+  var nr =
+    rCC * (1 - st.contribTax) -
+    rDiv293 -
+    (rWork ? (st.robInsurancePremium || 0) : 0);
+
+  rBal = Math.max(0, rBal + nr);
+}
+
+if (rWork) {
+  rBal = rBal + rBal * st.robWorkReturn;
+}
+
+if (st.hasPartner && tCanContribute) {
+  var nt =
+    tCC * (1 - st.contribTax) -
+    tDiv293 -
+    (tWork ? (st.tinaInsurancePremium || 0) : 0);
+
+  tBal = Math.max(0, tBal + nt);
+}
+
+if (st.hasPartner && tWork) {
+  tBal = tBal + tBal * st.tinaWorkReturn;
+}
+
+if (!st.hasPartner) {
+  tBal = 0;
+}
     // Non-concessional contributions (no tax, any phase) — window is each
     // person's own age, since "contribute from 55 to 60" naturally means
     // when THAT PERSON is 55-60, not when your age happens to be 55-60.
