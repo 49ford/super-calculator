@@ -1055,8 +1055,8 @@ function solveMaxSpend(targetBalance){
    * spendShortfall is the authoritative affordability test used by the
    * timeline's red-spend warning.
    */
-  var hasSpendShortfall = fRows.*ome(function (r) {
-    return Numb*r(r.spendShortfall || 0) > 1;
+  var hasSpendShortfall = fRows.some(function (r) {
+    return Number(r.spendShortfall || 0) > 1;
   });
 
   var meetsTargetBalance =
