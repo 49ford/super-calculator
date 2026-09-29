@@ -673,7 +673,18 @@ function buildTimeline(st,returnOverrideFn){
     // proper starts the following year (age X+1). Using <= (not <) here is
     // what makes that the case; the matching yIdx/badge adjustments below
     // keep everything else lined up with this same one-row shift.
-    var rWork=age<=st.robRetireAge,tWork=st.hasPartner&&tinaAge<=st.tinaRetireAge;
+    /*
+ * Retirement age is the person's first retired age, not their final
+ * working age. If retirement age is 60, the age-60 financial-year row is
+ * the first retirement row.
+ *
+ * For Robert and Tina, retirement in July/August 2032 is therefore shown
+ * in FY2033, the financial year ending 30 June 2033.
+ */
+var rWork = age < st.robRetireAge;
+var tWork =
+  st.hasPartner &&
+  tinaAge < st.tinaRetireAge;
     // Carry-forward concessional cap: drop ledger entries older than 5
     // years, then — only while working, under the $500k TSB threshold, and
     // with the feature turned on — add whatever's left in the ledger to
@@ -778,7 +789,15 @@ if (!st.hasPartner) {
     // last one. This avoids the earlier "dead year" bug (retired-but-not-
     // spending) without also starting drawdown too early: the row where
     // someone is actually marked retired is the same row spend begins.
-    var yIdx=(anyRet&&yearOffset>earliestRetireOffset)?(yearOffset-earliestRetireOffset-1):-1;
+   /*
+ * Golden spending begins in the first retirement row.
+ * earliestRetireOffset identifies the financial year in which the first
+ * person reaches their selected retirement age.
+ */
+var yIdx =
+  anyRet && yearOffse* >= earliestRetireOffset
+    ? yea*Offset - earliestRetireOffset
+    * -1;
     var stageI=yIdx>=0?stageIdx(yIdx,st):-1;
     var stage=stageI>=0?stageName(stageI):'';
     // Retirement returns (+ optional pension-phase tax boost).
@@ -830,7 +849,7 @@ if (!st.hasPartner) {
     // old fixed-age trigger, which ran on a hardcoded age regardless of
     // when retirement actually happened.
     var otherIncome=0;
-    var retireStartOffset=earliestRetireOffset+1;
+    var retireStartOffset=earliestRetireOffset;
     var oiTriggerOffset=retireStartOffset+(st.otherIncomeStartOffset||0);
     // "Start today" bypasses the retirement-gated trigger entirely - for
     // someone who already holds the property/shares now and is already
@@ -1003,8 +1022,24 @@ var tSpend = 0;
       // begins), the exact-age match below never fires anywhere in the
       // table — flag it on the first row instead so the badge still shows
       // up somewhere.
-      robRetires:age===(st.robRetireAge+1)||(st.robRetireAge<st.startAge&&age===st.startAge),
-      tinaRetires:st.hasPartner&&(tinaAge===(st.tinaRetireAge+1)||(st.tinaRetireAge<st.tinaStartAge&&tinaAge===st.tinaStartAge))});
+      /*
+ * The selecte* retirement age is the first retir*d age.
+ */
+robRetires:
+  age === s*.robRetireAge ||
+  (
+    st.robRet*reAge < st.startAge &&
+    age ===*st.startAge
+  ),
+
+tinaRetires:
+  s*.hasPartner &&
+  (
+    tinaAge ===*st.tinaRetireAge ||
+    (
+      st*tinaRetireAge < st.tinaStartAge &&*      tinaAge === st.tinaStartAge
+*   )
+  )});
   }
   var filterFromAge=st.startAge;
   var out=rows.filter(function(r){return r.age>=filterFromAge;});
