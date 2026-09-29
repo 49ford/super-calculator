@@ -887,10 +887,41 @@ if (!st.hasPartner) {
     // to nominal terms at the CPI rate (consistent with the pension/cap
     // indexation above), so the "Real $" display toggle reverses a matching
     // escalation rather than un-inflating a figure that never grew.
-    var baseSpend=stageI===0?st.spendGolden:stageI===1?st.spendSilver:stageI===2?st.spendLegacy:0;
-    var grossSpend=baseSpend>0?idx(baseSpend,age,st):0;
-    var netSpend=Math.max(0,grossSpend-pension-otherIncome-ptIncome);
-    var rSpend=0,tSpend=0;
+   var baseSpend =
+  stageI === 0 ? st.spendGolden :
+  stageI === 1 ? st.spendSilver :
+  stageI === 2 ? st.spendLegacy :
+  0;
+
+var grossSpend =
+  baseSpend > 0 ? idx(baseSpend, age, st) : 0;
+
+/*
+ * Other-asset income and part-time income are taxable personal income.
+ * Use their after-tax values when calculating how much must be withdrawn
+ * from super. Previously the model subtracted gross income here, but later
+ * counted only net income as available to spend. That caused a false
+ * shortfall equal to the income tax and left too much money in super.
+ *
+ * Age Pension is retained in full because it is modelled here as spendable
+ * household income.
+ */
+var otherIncomeNet =
+  otherIncome * (1 - (st.personalTaxRate || 0));
+
+var ptIncomeNet =
+  ptIncome * (1 - (st.personalTaxRate || 0));
+
+var netSpend = Math.max(
+  0,
+  grossSpend -
+  pension -
+  otherIncomeNet -
+  ptIncomeNet
+);
+
+var rSpend = 0;
+var tSpend = 0;
     if(netSpend>0){
       if(bothRet){
         // Auto mode: split proportional to each person's CURRENT super
@@ -931,8 +962,6 @@ if (!st.hasPartner) {
     // for what's actually available to spend. The Age Pension income test
     // above already ran on the gross amounts, matching how Centrelink
     // actually assesses income (before tax).
-    var otherIncomeNet=otherIncome*(1-(st.personalTaxRate||0));
-    var ptIncomeNet=ptIncome*(1-(st.personalTaxRate||0));
     var totalAvailable=pension+otherIncomeNet+ptIncomeNet+rSpendBeforeMD+tSpendBeforeMD;
     var spendShortfall=Math.max(0,grossSpend-totalAvailable);
     var spendSurplus=Math.max(0,totalAvailable-grossSpend);
