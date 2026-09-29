@@ -795,9 +795,9 @@ if (!st.hasPartner) {
  * person reaches their selected retirement age.
  */
 var yIdx =
-  anyRet && yearOffse* >= earliestRetireOffset
+  anyRet && yearOffset >= earliestRetireOffset
     ? yea*Offset - earliestRetireOffset
-    * -1;
+    : -1;
     var stageI=yIdx>=0?stageIdx(yIdx,st):-1;
     var stage=stageI>=0?stageName(stageI):'';
     // Retirement returns (+ optional pension-phase tax boost).
