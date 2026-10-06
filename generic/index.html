@@ -1732,10 +1732,10 @@ function balanceChart(rows,rowsB,rowsShock,mcRows){
   // state.tinaRetireAge is a Partner-space age — translate to the shared
   // robAge x-axis (what YOUR age will be when Partner retires) before it
   // can be plotted alongside state.robRetireAge.
-  addMarker(state.robRetireAge,nameYou()+' '+yearForAge(state.robRetireAge),'#6c8ef0');
+  addMarker(state.robRetireAge,nameYou()+' '+state.robRetireAge,'#6c8ef0');
   if(state.hasPartner){
     var partnerRetireRobAge=ageEquivalent(state,state.tinaRetireAge);
-    if(partnerRetireRobAge!==state.robRetireAge)addMarker(partnerRetireRobAge,namePartner()+' '+yearForAge(partnerRetireRobAge),'#a06cf0');
+    if(partnerRetireRobAge!==state.robRetireAge)addMarker(partnerRetireRobAge,namePartner()+' '+state.tinaRetireAge,'#a06cf0');
   }
 
   // Monte Carlo band (p10–p90)
